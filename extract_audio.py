@@ -39,10 +39,11 @@ def main():
     asr = pipeline(
         "automatic-speech-recognition",
         model=whisper_model,
-        chunk_length_s=30,
+        chunk_length_s=20,
         stride_length_s=5,
         device=device,
-    )
+        return_timestamps=True,
+)
     asr.feature_extractor.return_attention_mask = True
     result = asr(audio_file)
     print(f"Transcription result: \n {result}")
