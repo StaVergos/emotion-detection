@@ -9,7 +9,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.config import get_logger, DEFAULT_BUCKET_NAME
 from src.minio import MinioClient
+from src.mongodb import emotion_detection_collection, check_record_exists
 from src.preprocessing import extract_audio_from_video
+from src.schemas import EmotionDetection
 from src.transcript import get_transcript
 from src.short import emotional_detection_for_each_timestamp
 
@@ -32,11 +34,14 @@ def healthcheck():
 
 
 @app.post("/process_video/")
-def process_video(file: UploadFile):
-    # 1) validate
+def process_video(file: UploadFile) -> EmotionDetection:
     if not file.filename.lower().endswith(".mp4"):
         logger.error("Unsupported format: %s", file.filename)
         raise HTTPException(400, "Upload an MP4 video.")
+
+    if check_record_exists(file.filename):
+        logger.error("Record already exists for video: %s", file.filename)
+        raise HTTPException(409, "Record already exists for this video.")
 
     upload_id = uuid4().hex
     orig_name = Path(file.filename).name
@@ -77,10 +82,18 @@ def process_video(file: UploadFile):
                 os.remove(p)
             except OSError:
                 pass
-
-    return {
+    transcript_text = transcript.get("text", "")
+    document = {
+        "video_filename": orig_name,
         "video_object": video_key,
         "audio_object": audio_key,
-        "transcript": transcript,
+        "transcript": transcript_text,
         "emotions": emotions,
     }
+    try:
+        emotion_detection_collection.insert_one(document)
+        logger.info("Document inserted into MongoDB")
+    except Exception as e:
+        logger.error("Failed to insert document into MongoDB: %s", e)
+        raise HTTPException(500, "Database error")
+    return document
