@@ -1,5 +1,13 @@
 import logging
 
+# MINIO_ENDPOINT = "http://minio:9000"
+MINIO_ENDPOINT = "http://localhost:9000"
+ACCESS_KEY = "minioadmin"
+SECRET_KEY = "minioadmin"
+REGION_NAME = "us-east-1"
+SIGNATURE_VERSION = "s3v4"
+DEFAULT_BUCKET_NAME = "emotion-detection"
+
 
 def get_logger():
     """
