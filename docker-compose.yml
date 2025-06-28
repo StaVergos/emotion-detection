@@ -1,0 +1,48 @@
+services:
+  # backend:
+  #   build: ./backend
+  #   volumes:
+  #     - ./backend:/backend
+  #   ports:
+  #     - "8000:8000"
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8000/healthcheck"]
+  #     interval: 30s
+  #     timeout: 30s
+  #     retries: 5
+  #     start_period: 30s
+  #   depends_on:
+  #     minio:
+  #       condition: service_healthy
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: always
+  # frontend:
+  #   build: ./frontend
+  #   volumes:
+  #     - ./frontend:/app:cached
+  #     - frontend_node_modules:/app/node_modules 
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - backend
+
+volumes:
+  minio-data:
+  frontend_node_modules:
+    
