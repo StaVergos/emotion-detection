@@ -1,49 +1,86 @@
 import os
-from fastapi import FastAPI, UploadFile
+import shutil
+import tempfile
+from uuid import uuid4
+from pathlib import Path
+
+from fastapi import FastAPI, UploadFile, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+
+from src.config import get_logger, DEFAULT_BUCKET_NAME
+from src.minio import MinioClient
 from src.preprocessing import extract_audio_from_video
 from src.transcript import get_transcript
 from src.short import emotional_detection_for_each_timestamp
-from src.config import get_logger
 
 logger = get_logger()
+minio = MinioClient(bucket_name=DEFAULT_BUCKET_NAME)
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
-@app.get("/")
-def read_root():
-    return {"Hello": "World"}
+@app.get("/healthcheck")
+def healthcheck():
+    return {"status": "online"}
 
-# endpoint that uploads a video file, extracts audio, transcribes it, and detects emotions
+
 @app.post("/process_video/")
 def process_video(file: UploadFile):
-    """
-    Process the uploaded video file to extract audio, transcribe it, and detect emotions.
-    """
-    # Save the uploaded file temporarily
-    if not file.filename.endswith(('.mp4')):
-        logger.error("Unsupported file format")
-        return {"error": "Unsupported file format. Please upload a video file."}
-    video_path = f"temp_{file.filename}"
-    with open(video_path, "wb") as f:
-        f.write(file.file.read())
-    logger.info(f"Video file saved temporarily at {video_path}")
+    # 1) validate
+    if not file.filename.lower().endswith(".mp4"):
+        logger.error("Unsupported format: %s", file.filename)
+        raise HTTPException(400, "Upload an MP4 video.")
 
-    # Extract audio from the video
-    audio_path_name = os.path.splitext(video_path)[0] + ".wav"
-    audio_path = extract_audio_from_video(video_path, audio_path_name)
-    if not audio_path:
-        logger.error("Failed to extract audio from video")
-        return {"error": "Failed to extract audio from video."}
-    logger.info(f"Audio extracted and saved at {audio_path}")
+    upload_id = uuid4().hex
+    orig_name = Path(file.filename).name
+    bucket = minio.bucket_name
+    video_key = f"videos/{upload_id}/{orig_name}"
+    audio_key = f"audio/{upload_id}.wav"
 
-    transcript = get_transcript(audio_path)
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_vid:
+        shutil.copyfileobj(file.file, tmp_vid)
+        tmp_vid_path = tmp_vid.name
 
-    emotions = emotional_detection_for_each_timestamp(transcript)
-    os.remove(video_path)
-    logger.info(f"Temporary video file {video_path} removed.")
-    os.remove(audio_path)
-    logger.info(f"Temporary audio file {audio_path} removed.")
-    logger.info("Processing completed successfully.")
-    return {"transcript": transcript, "emotions": emotions}
-    
+    try:
+        with open(tmp_vid_path, "rb") as stream:
+            minio.upload_fileobj(stream, bucket, video_key)
+        logger.info("Video uploaded to %s/%s", bucket, video_key)
+
+        tmp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        tmp_wav_path = tmp_wav.name
+        tmp_wav.close()
+
+        extract_audio_from_video(tmp_vid_path, tmp_wav_path)
+
+        with open(tmp_wav_path, "rb") as stream:
+            minio.upload_fileobj(stream, bucket, audio_key)
+        logger.info("Audio uploaded to %s/%s", bucket, audio_key)
+
+        transcript = get_transcript(tmp_wav_path)
+        emotions = emotional_detection_for_each_timestamp(transcript)
+
+    except Exception:
+        logger.exception("Processing failed")
+        raise HTTPException(500, "Processing error")
+
+    finally:
+        # clean up local temp files
+        for p in (tmp_vid_path, tmp_wav_path):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+
+    return {
+        "video_object": video_key,
+        "audio_object": audio_key,
+        "transcript": transcript,
+        "emotions": emotions,
+    }
