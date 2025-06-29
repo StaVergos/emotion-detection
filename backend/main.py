@@ -1,22 +1,26 @@
 import os
 import shutil
 import tempfile
-from uuid import uuid4
 from pathlib import Path
+from datetime import datetime, timezone
+from uuid import uuid4
 
-from fastapi import FastAPI, UploadFile, HTTPException
+from fastapi import FastAPI, UploadFile, HTTPException, Path as PathParam
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.config import get_logger, DEFAULT_BUCKET_NAME
+from src.config import get_logger
 from src.minio import MinioClient
 from src.mongodb import emotion_detection_collection, check_record_exists
+from src.schemas import (
+    EmotionDetection,
+    VideoListItem,
+)
 from src.preprocessing import extract_audio_from_video
-from src.schemas import EmotionDetection
 from src.transcript import get_transcript
 from src.short import emotional_detection_for_each_timestamp
 
 logger = get_logger()
-minio = MinioClient(bucket_name=DEFAULT_BUCKET_NAME)
+minio = MinioClient()
 
 app = FastAPI()
 app.add_middleware(
@@ -33,67 +37,91 @@ def healthcheck():
     return {"status": "online"}
 
 
-@app.post("/process_video/")
-def process_video(file: UploadFile) -> EmotionDetection:
+@app.get("/videos", response_model=list[VideoListItem])
+def list_videos():
+    items = list(emotion_detection_collection.find())
+    if not items:
+        raise HTTPException(404, "No videos found.")
+    return items
+
+
+@app.get("/videos/{video_id}", response_model=VideoListItem)
+def get_video(video_id: str = PathParam(..., description="MongoDB document ID")):
+    item = emotion_detection_collection.find_one({"_id": video_id})
+    if not item:
+        raise HTTPException(404, "Video not found.")
+    return item
+
+
+@app.post("/videos/upload", status_code=201)
+def upload_video(file: UploadFile):
     if not file.filename.lower().endswith(".mp4"):
-        logger.error("Unsupported format: %s", file.filename)
-        raise HTTPException(400, "Upload an MP4 video.")
+        raise HTTPException(400, "Please upload an MP4 video.")
 
     if check_record_exists(file.filename):
-        logger.error("Record already exists for video: %s", file.filename)
-        raise HTTPException(409, "Record already exists for this video.")
+        raise HTTPException(409, "A record for this filename already exists.")
 
     upload_id = uuid4().hex
     orig_name = Path(file.filename).name
-    bucket = minio.bucket_name
     video_key = f"videos/{upload_id}/{orig_name}"
-    audio_key = f"audio/{upload_id}.wav"
 
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        tmp_path = tmp.name
+    try:
+        with open(tmp_path, "rb") as stream:
+            minio.upload_fileobj(stream, minio.bucket_name, video_key)
+    finally:
+        os.remove(tmp_path)
+
+    created_at = datetime.now(timezone.utc)
+    doc = {
+        "_id": upload_id,
+        "video_filename": orig_name,
+        "video_object": video_key,
+        "created_at": created_at,
+    }
+    emotion_detection_collection.insert_one(doc)
+
+    return doc
+
+
+@app.post("/videos/{video_id}/process", response_model=EmotionDetection)
+def process_video(video_id: str = PathParam(..., description="MongoDB document ID")):
+    record = emotion_detection_collection.find_one({"_id": video_id})
+    if not record:
+        raise HTTPException(404, "Video not found.")
+
+    video_key = record["video_object"]
+    audio_key = f"audio/{video_id}.wav"
+
+    in_mem = minio.get_fileobj_in_memory(minio.bucket_name, video_key)
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_vid:
-        shutil.copyfileobj(file.file, tmp_vid)
+        tmp_vid.write(in_mem.read())
         tmp_vid_path = tmp_vid.name
 
     try:
-        with open(tmp_vid_path, "rb") as stream:
-            minio.upload_fileobj(stream, bucket, video_key)
-        logger.info("Video uploaded to %s/%s", bucket, video_key)
-
-        tmp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-        tmp_wav_path = tmp_wav.name
-        tmp_wav.close()
-
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_wav:
+            tmp_wav_path = tmp_wav.name
         extract_audio_from_video(tmp_vid_path, tmp_wav_path)
 
         with open(tmp_wav_path, "rb") as stream:
-            minio.upload_fileobj(stream, bucket, audio_key)
-        logger.info("Audio uploaded to %s/%s", bucket, audio_key)
+            minio.upload_fileobj(stream, minio.bucket_name, audio_key)
 
         transcript = get_transcript(tmp_wav_path)
         emotions = emotional_detection_for_each_timestamp(transcript)
 
-    except Exception:
-        logger.exception("Processing failed")
-        raise HTTPException(500, "Processing error")
-
     finally:
-        # clean up local temp files
-        for p in (tmp_vid_path, tmp_wav_path):
-            try:
-                os.remove(p)
-            except OSError:
-                pass
+        os.remove(tmp_vid_path)
+        os.remove(tmp_wav_path)
+
     transcript_text = transcript.get("text", "")
-    document = {
-        "video_filename": orig_name,
-        "video_object": video_key,
+    updated = {
         "audio_object": audio_key,
         "transcript": transcript_text,
         "emotions": emotions,
     }
-    try:
-        emotion_detection_collection.insert_one(document)
-        logger.info("Document inserted into MongoDB")
-    except Exception as e:
-        logger.error("Failed to insert document into MongoDB: %s", e)
-        raise HTTPException(500, "Database error")
-    return document
+    emotion_detection_collection.update_one({"_id": video_id}, {"$set": updated})
+
+    record.update(updated)
+    return record
