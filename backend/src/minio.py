@@ -10,6 +10,7 @@ from src.config import (
     SECRET_KEY,
     REGION_NAME,
     SIGNATURE_VERSION,
+    DEFAULT_BUCKET_NAME,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,7 +24,7 @@ class MinioClient:
         secret_key=SECRET_KEY,
         region_name=REGION_NAME,
         signature_version=SIGNATURE_VERSION,
-        bucket_name: str = None,
+        bucket_name: str = DEFAULT_BUCKET_NAME,
     ):
         self.bucket_name = bucket_name
         self.s3 = boto3.client(
