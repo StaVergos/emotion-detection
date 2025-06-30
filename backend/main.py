@@ -167,3 +167,37 @@ def analyze(id: str):
         raise HTTPException(400, "Transcript not found for this video.")
     # job = queue.enqueue(emotional_detection, transcript, job_id=id)
     return {"job_id": "job.id"}
+
+
+@app.post("/enqueue/{steps}")
+def enqueue_test(steps: int):
+    """
+    Enqueue a dummy long-running task (steps seconds) for testing.
+    """
+    job = queue.enqueue(long_task, steps)
+    return {"job_id": job.id}
+
+
+@app.websocket("/ws/status/{job_id}")
+async def ws_job_status(websocket: WebSocket, job_id: str):
+    await websocket.accept()
+    try:
+        job = Job.fetch(job_id, connection=redis)
+    except NoSuchJobError:
+        await websocket.send_json({"error": "Job not found"})
+        await websocket.close()
+        return
+
+    try:
+        while True:
+            status = job.get_status()
+            meta = job.meta or {}
+            await websocket.send_json(
+                {"job_id": job_id, "status": status, "meta": meta}
+            )
+            if status in ("finished", "failed"):
+                break
+            await asyncio.sleep(1)
+    except WebSocketDisconnect:
+        return
+    await websocket.close()
