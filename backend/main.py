@@ -1,3 +1,4 @@
+import asyncio
 import os
 import shutil
 import tempfile
@@ -5,8 +6,12 @@ from pathlib import Path
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import FastAPI, UploadFile, HTTPException, Path as PathParam
+from fastapi import FastAPI, UploadFile, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from rq import Queue
+from redis import Redis
+from rq.job import Job
+from rq.exceptions import NoSuchJobError
 
 from src.config import get_logger
 from src.minio import MinioClient
@@ -14,13 +19,19 @@ from src.mongodb import emotion_detection_collection, check_record_exists
 from src.schemas import (
     EmotionDetection,
     VideoListItem,
+    TranscriptProcessStatus,
 )
 from src.preprocessing import extract_audio_from_video
 from src.transcript import get_transcript
 from src.short import emotional_detection_for_each_timestamp
 
+# from src.emotion_detection import emotional_detection
+from src.tasks import long_task
+
 logger = get_logger()
 minio = MinioClient()
+redis = Redis(host="localhost", port=6379)
+queue = Queue("emotion_detection", connection=redis)
 
 app = FastAPI()
 app.add_middleware(
@@ -46,14 +57,14 @@ def list_videos():
 
 
 @app.get("/videos/{video_id}", response_model=VideoListItem)
-def get_video(video_id: str = PathParam(..., description="MongoDB document ID")):
+def get_video(video_id: str):
     item = emotion_detection_collection.find_one({"_id": video_id})
     if not item:
         raise HTTPException(404, "Video not found.")
     return item
 
 
-@app.post("/videos/upload", status_code=201)
+@app.post("/videos", status_code=201)
 def upload_video(file: UploadFile):
     if not file.filename.lower().endswith(".mp4"):
         raise HTTPException(400, "Please upload an MP4 video.")
@@ -80,14 +91,33 @@ def upload_video(file: UploadFile):
         "video_filename": orig_name,
         "video_object": video_key,
         "created_at": created_at,
+        "transcript_process_status": TranscriptProcessStatus.UPLOADED.value,
     }
     emotion_detection_collection.insert_one(doc)
 
     return doc
 
 
+@app.delete("/videos/{video_id}", status_code=204)
+def delete_video(video_id: str):
+    record = emotion_detection_collection.find_one({"_id": video_id})
+    if not record:
+        raise HTTPException(404, "Video not found.")
+
+    video_key = record["video_object"]
+    audio_key = record.get("audio_object")
+
+    minio.s3.delete_object(Bucket=minio.bucket_name, Key=video_key)
+    if audio_key:
+        minio.s3.delete_object(Bucket=minio.bucket_name, Key=audio_key)
+
+    emotion_detection_collection.delete_one({"_id": video_id})
+
+    return {"message": "Video deleted successfully."}
+
+
 @app.post("/videos/{video_id}/process", response_model=EmotionDetection)
-def process_video(video_id: str = PathParam(..., description="MongoDB document ID")):
+def process_video(video_id: str):
     record = emotion_detection_collection.find_one({"_id": video_id})
     if not record:
         raise HTTPException(404, "Video not found.")
@@ -125,3 +155,15 @@ def process_video(video_id: str = PathParam(..., description="MongoDB document I
 
     record.update(updated)
     return record
+
+
+@app.post("/videos/{id}/analyze")
+def analyze(id: str):
+    record = emotion_detection_collection.find_one({"_id": id})
+    if not record:
+        raise HTTPException(404, "Video not found.")
+    transcript = record.get("transcript")
+    if not transcript:
+        raise HTTPException(400, "Transcript not found for this video.")
+    # job = queue.enqueue(emotional_detection, transcript, job_id=id)
+    return {"job_id": "job.id"}
