@@ -111,3 +111,22 @@ class EmotionDetection(VideoMetadata):
 class VideoListItem(EmotionDetection):
     id: PyObjectId = Field(alias="_id", description="MongoDB document ID as string")
     model_config = ConfigDict(populate_by_name=True)
+
+
+class JobStatus(BaseModel):
+    job_id: str
+    status: str
+    meta: dict[str, Any] = Field(default_factory=dict)
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "job_id": "1234567890abcdef",
+                "status": "completed",
+                "meta": {
+                    "step": "processing",
+                    "progress": 100,
+                    "result": {"emotion": "joy", "score": 0.95},
+                },
+            }
+        },
+    )
