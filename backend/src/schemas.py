@@ -1,8 +1,8 @@
 from enum import StrEnum
-from typing import Annotated, List
+from typing import Annotated, Any, List
 from pydantic import BaseModel, Field, BeforeValidator
 from pydantic import ConfigDict
-from datetime import datetime
+from datetime import datetime, timezone
 
 PyObjectId = Annotated[str, BeforeValidator(str)]
 
@@ -15,6 +15,12 @@ class EmotionType(StrEnum):
     NEUTRAL = "neutral"
     FEAR = "fear"
     DISGUST = "disgust"
+
+
+class TranscriptProcessStatus(StrEnum):
+    UPLOADED = "uploaded"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
 
 
 class Emotion(BaseModel):
@@ -43,8 +49,12 @@ class VideoMetadata(BaseModel):
     video_filename: str = Field(description="Original uploaded video filename")
     video_object: str = Field(description="MinIO key where the video is stored")
     created_at: datetime = Field(
-        default_factory=datetime.now(datetime.timezone.utc),
+        default_factory=datetime.now(timezone.utc),
         description="UTC timestamp when this record was created",
+    )
+    transcript_process_status: TranscriptProcessStatus = Field(
+        default="uploaded",
+        description="Current status of the video processing (e.g., 'uploaded', 'processing', 'completed')",
     )
     model_config = ConfigDict(
         json_schema_extra={
@@ -59,12 +69,20 @@ class VideoMetadata(BaseModel):
 
 
 class EmotionDetection(VideoMetadata):
-    audio_object: str = Field(
-        description="MinIO key where the extracted audio is stored"
+    audio_object: str | None = Field(
+        description="MinIO key where the extracted audio is stored",
+        default=None,
     )
-    transcript: str = Field(description="Full ASR transcript of the video audio")
-    emotions: List[Emotion] = Field(
-        description="List of detected emotions with timestamps"
+    transcript: str | None = Field(
+        description="Full ASR transcript of the video audio", default=None
+    )
+    emotions: List[Emotion] | None = Field(
+        description="List of detected emotions with timestamps",
+        default=[],
+    )
+    emotion_prompt_result: str | None = Field(
+        default=None,
+        description="Result of the emotion detection prompt, if applicable",
     )
 
     model_config = ConfigDict(
@@ -83,6 +101,8 @@ class EmotionDetection(VideoMetadata):
                     }
                 ],
                 "created_at": "2025-06-29T02:18:05Z",
+                "transcript_process_status": "completed",
+                "emotion_prompt_result": "The detected emotion is neutral.",
             }
         }
     )
