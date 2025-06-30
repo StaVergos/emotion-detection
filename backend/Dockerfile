@@ -21,4 +21,4 @@ COPY . ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--reload", "--reload-dir", "/backend"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--reload"]

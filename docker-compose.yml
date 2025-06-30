@@ -2,7 +2,8 @@ services:
   # backend:
   #   build: ./backend
   #   volumes:
-  #     - ./backend:/backend
+  #     - ./backend:/app:cached
+  #     - backend_venv:/app/.venv
   #   ports:
   #     - "8000:8000"
   #   healthcheck:
@@ -49,9 +50,32 @@ services:
     volumes:
       - mongo-data:/data/db
     restart: always
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    restart: always
+  worker:
+    build:
+      context: ./backend
+    volumes:
+      - ./backend:/app:cached
+      - backend_venv:/app/.venv
+    working_dir: /app
+    environment:
+      - REDIS_URL=redis://redis:6379
+    command: ["rq", "worker", "emotion_detection"]
+    depends_on:
+      - redis
+      - minio
+      - mongodb
 
 volumes:
   minio-data:
   frontend_node_modules:
   mongo-data:
-    
+  backend_src:
+    driver: local
+  backend_venv:
+    driver: local
