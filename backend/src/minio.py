@@ -4,7 +4,7 @@ import logging
 import boto3
 from botocore.client import Config
 
-from src.config import (
+from src.api.config import (
     MINIO_ENDPOINT,
     ACCESS_KEY,
     SECRET_KEY,

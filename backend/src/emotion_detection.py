@@ -1,40 +1,28 @@
-from transformers import (
-    AutoTokenizer,
-    AutoModelForCausalLM,
-    GenerationConfig,
-)
-import torch
 import time
+from rq import get_current_job
+from transformers import AutoTokenizer, AutoModelForCausalLM, GenerationConfig
+import torch
+
 from src.constants import EMOTION_LLM_MODEL
-from src.config import get_logger
+from backend.src.api.config import get_logger
 
 logger = get_logger()
 
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
 
-init_start = time.time()
-
 tokenizer = AutoTokenizer.from_pretrained(EMOTION_LLM_MODEL, use_fast=True)
 tokenizer.pad_token = tokenizer.eos_token
 
-if use_cuda:
-    model = AutoModelForCausalLM.from_pretrained(
+model = (
+    AutoModelForCausalLM.from_pretrained(
         EMOTION_LLM_MODEL,
-        load_in_8bit=True,
-        device_map="auto",
-        torch_dtype=torch.float16,
+        load_in_8bit=use_cuda,
+        device_map="auto" if use_cuda else None,
+        torch_dtype=torch.float16 if use_cuda else torch.float32,
     )
-else:
-    model = AutoModelForCausalLM.from_pretrained(
-        EMOTION_LLM_MODEL,
-        torch_dtype=torch.float32,
-    ).to(device)
-
-model.eval()
-
-logger.info(
-    f"Model loaded in {time.time() - init_start:.2f}s on {device} (cuda={use_cuda})"
+    .to(device)
+    .eval()
 )
 
 gen_config = GenerationConfig(
@@ -47,37 +35,32 @@ gen_config = GenerationConfig(
 
 
 def emotional_detection(transcript: dict) -> str:
+    job = get_current_job()
     t0 = time.time()
     text = transcript.get("text", transcript)
-    logger.info(f"Detecting emotion for: {text!r}")
+    logger.info(f"LLM emotion-detect for: {text!r}")
 
-    prompt = (
-        "Given the following transcript, identify the speaker's emotion:\n"
-        f"{text}\nEmotion:"
-    )
+    prompt = f"Given the following transcript, identify the speaker's emotion:\n{text}\nEmotion:"
 
-    tokens = tokenizer(
-        prompt,
-        return_tensors="pt",
-        truncation=True,
-        max_length=512,
-    )
-    input_ids = tokens.input_ids.to(device)
-    attention_mask = tokens.attention_mask.to(device)
+    job.meta["step"] = "tokenizing"
+    job.save_meta()
+    inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
+    inputs = {k: v.to(device) for k, v in inputs.items()}
 
+    job.meta["step"] = "generating"
+    job.save_meta()
     with torch.no_grad():
-        outputs = model.generate(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            generation_config=gen_config,
-            max_new_tokens=20,
-        )
+        out = model.generate(**inputs, generation_config=gen_config, max_new_tokens=20)
 
-    decoded = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    job.meta["step"] = "decoding"
+    job.save_meta()
+    decoded = tokenizer.decode(out[0], skip_special_tokens=True)
     emotion = decoded[len(prompt) :].strip()
 
-    elapsed = time.time() - t0
-    logger.info(f"Emotion detection done in {elapsed:.2f}s")
-    print(f"Emotion detection done in {elapsed:.2f}s")
+    job.meta["step"] = "done"
+    job.meta["emotion"] = emotion
+    job.meta["elapsed_s"] = time.time() - t0
+    job.save_meta()
 
+    logger.info(f"Detected emotion: {emotion}")
     return emotion

@@ -1,6 +1,6 @@
 import time
 from moviepy import VideoFileClip
-from src.config import get_logger
+from src.api.config import get_logger
 
 logger = get_logger()
 

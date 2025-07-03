@@ -1,6 +1,5 @@
 import logging
 
-# MINIO_ENDPOINT = "http://minio:9000"
 MINIO_ENDPOINT = "http://localhost:9000"
 ACCESS_KEY = "minioadmin"
 SECRET_KEY = "minioadmin"

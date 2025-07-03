@@ -1,7 +1,7 @@
 from transformers import pipeline
 import torch
 import time
-from src.config import get_logger
+from src.api.config import get_logger
 
 logger = get_logger()
 
