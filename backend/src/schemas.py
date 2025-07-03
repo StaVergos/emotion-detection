@@ -130,3 +130,29 @@ class JobStatus(BaseModel):
             }
         },
     )
+
+
+class VideosResponse(BaseModel):
+    videos: List[VideoListItem] = Field(
+        description="List of video metadata with emotion detection results"
+    )
+    total: int = Field(description="Total number of videos in the collection")
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "videos": [
+                    {
+                        "_id": "605c5a2e2e3a3f4b5c6d7e8f",
+                        "video_filename": "example_video.mp4",
+                        "video_object": "videos/605c5a2e2e3a3f4b5c6d7e8f/example_video.mp4",
+                        "audio_object": "audio/605c5a2e2e3a3f4b5c6d7e8f.wav",
+                        "transcript": "This is an example transcript of the video.",
+                        "emotions": [],
+                        "created_at": "2025-06-29T02:18:05Z",
+                        "transcript_process_status": "completed",
+                    }
+                ],
+                "total": 1,
+            }
+        },
+    )

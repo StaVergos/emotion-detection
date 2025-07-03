@@ -20,12 +20,12 @@ from src.schemas import (
     EmotionDetection,
     VideoListItem,
     TranscriptProcessStatus,
+    VideosResponse,
 )
 from src.preprocessing import extract_audio_from_video
 from src.transcript import get_transcript
 from src.short import emotional_detection_for_each_timestamp
 
-# from src.emotion_detection import emotional_detection
 from src.tasks import long_task
 
 logger = get_logger()
@@ -48,12 +48,12 @@ def healthcheck():
     return {"status": "online"}
 
 
-@app.get("/videos", response_model=list[VideoListItem])
+@app.get("/videos", response_model=VideosResponse)
 def list_videos():
     items = list(emotion_detection_collection.find())
     if not items:
         raise HTTPException(404, "No videos found.")
-    return items
+    return {"videos": items, "total": len(items)}
 
 
 @app.get("/videos/{video_id}", response_model=VideoListItem)
