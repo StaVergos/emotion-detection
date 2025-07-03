@@ -6,22 +6,34 @@ from pathlib import Path
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import FastAPI, UploadFile, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    UploadFile,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+    Request,
+)
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from rq import Queue
 from redis import Redis
 from rq.job import Job
 from rq.exceptions import NoSuchJobError
 
-from src.config import get_logger
+from src.api.config import get_logger
 from src.minio import MinioClient
 from src.mongodb import emotion_detection_collection, check_record_exists
-from src.schemas import (
+from src.api.schemas import (
     EmotionDetection,
+    Error,
     VideoListItem,
     TranscriptProcessStatus,
     VideosResponse,
+    VideoError,
 )
+from src.api.exceptions import APIError
 from src.preprocessing import extract_audio_from_video
 from src.transcript import get_transcript
 from src.short import emotional_detection_for_each_timestamp
@@ -41,6 +53,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(APIError)
+async def api_error_handler(request: Request, exc: APIError):
+    # Build the exact payload your VideoError expects
+    payload = VideoError(errors=[e.dict() for e in exc.errors]).dict()
+    return JSONResponse(status_code=exc.status_code, content=payload)
 
 
 @app.get("/healthcheck")
@@ -64,13 +83,36 @@ def get_video(video_id: str):
     return item
 
 
-@app.post("/videos", status_code=201)
+@app.post(
+    "/videos",
+    status_code=status.HTTP_201_CREATED,
+    response_model=VideoListItem,
+    responses={400: {"model": VideoError}, 409: {"model": VideoError}},
+)
 def upload_video(file: UploadFile):
     if not file.filename.lower().endswith(".mp4"):
-        raise HTTPException(400, "Please upload an MP4 video.")
+        raise APIError(
+            [
+                Error(
+                    code=status.HTTP_400_BAD_REQUEST,
+                    message="Invalid file format. Only .mp4 files are allowed.",
+                    source="file",
+                )
+            ],
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
 
     if check_record_exists(file.filename):
-        raise HTTPException(409, "A record for this filename already exists.")
+        raise APIError(
+            [
+                Error(
+                    code=status.HTTP_409_CONFLICT,
+                    message="A record for this filename already exists.",
+                    source="file",
+                )
+            ],
+            status_code=status.HTTP_409_CONFLICT,
+        )
 
     upload_id = uuid4().hex
     orig_name = Path(file.filename).name
@@ -95,7 +137,7 @@ def upload_video(file: UploadFile):
     }
     emotion_detection_collection.insert_one(doc)
 
-    return doc
+    return doc, 201
 
 
 @app.delete("/videos/{video_id}", status_code=204)
