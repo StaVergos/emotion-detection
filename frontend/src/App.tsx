@@ -1,3 +1,4 @@
+// frontend/src/App.tsx
 import { useState, useEffect, useCallback } from "react";
 import { AddVideo } from "./components/videos/addVideo";
 import VideoTablePage from "./components/videos/page";
@@ -24,7 +25,19 @@ function App() {
         throw new Error(detail);
       }
 
-      setVideos(json.videos);
+      const normalized: VideoItem[] = json.videos.map((raw: any) => ({
+        id: raw._id,
+        audio_object: raw.audio_object,
+        created_at: raw.created_at,
+        emotion_prompt_result: raw.emotion_prompt_result,
+        emotions: raw.emotions,
+        transcript: raw.transcript,
+        transcript_process_status: raw.transcript_process_status,
+        video_filename: raw.video_filename,
+        video_object: raw.video_object,
+      }));
+
+      setVideos(normalized);
     } catch (err: any) {
       setError(err.message);
     } finally {
