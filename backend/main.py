@@ -57,8 +57,7 @@ app.add_middleware(
 
 @app.exception_handler(APIError)
 async def api_error_handler(request: Request, exc: APIError):
-    # Build the exact payload your VideoError expects
-    payload = VideoError(errors=[e.dict() for e in exc.errors]).dict()
+    payload = VideoError(errors=[e.model_dump() for e in exc.errors]).model_dump()
     return JSONResponse(status_code=exc.status_code, content=payload)
 
 
@@ -137,7 +136,7 @@ def upload_video(file: UploadFile):
     }
     emotion_detection_collection.insert_one(doc)
 
-    return doc, 201
+    return doc
 
 
 @app.delete("/videos/{video_id}", status_code=204)
