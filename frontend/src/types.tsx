@@ -1,3 +1,9 @@
+export type APIError = {
+    code: number
+    message: string
+    source: string
+}
+
 export type Emotions = {
     emotion: string
     emotion_score: number
