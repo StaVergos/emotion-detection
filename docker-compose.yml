@@ -7,7 +7,7 @@ services:
   #   ports:
   #     - "8000:8000"
   #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:8000/healthcheck"]
+  #     test: [ "CMD", "curl", "-f", "http://localhost:8000/healthcheck" ]
   #     interval: 30s
   #     timeout: 30s
   #     retries: 5
@@ -28,7 +28,7 @@ services:
     volumes:
       - minio-data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
       interval: 30s
       timeout: 20s
       retries: 3
@@ -65,7 +65,13 @@ services:
     working_dir: /app
     environment:
       - REDIS_URL=redis://redis:6379
-    command: ["rq", "worker", "emotion_detection"]
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+      - MINIO_BUCKET=emotion-detection
+      - MINIO_REGION=us-east-1
+      - MONGODB_URI=mongodb://mongodb:27017/
+    command: [ "rq", "worker", "emotion_detection" ]
     depends_on:
       - redis
       - minio
