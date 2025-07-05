@@ -26,7 +26,6 @@ from src.api.config import get_logger
 from src.minio import MinioClient
 from src.mongodb import emotion_detection_collection, check_record_exists
 from src.api.schemas import (
-    EmotionDetection,
     Error,
     VideoListItem,
     TranscriptProcessStatus,
@@ -34,16 +33,13 @@ from src.api.schemas import (
     VideoError,
 )
 from src.api.exceptions import APIError
-from src.preprocessing import extract_audio_from_video
-from src.transcript import get_transcript
-from src.short import emotional_detection_for_each_timestamp
 
-from src.tasks import long_task
+from src.tasks import process_video_task
 
 logger = get_logger()
 minio = MinioClient()
 redis = Redis(host="localhost", port=6379)
-queue = Queue("emotion_detection", connection=redis)
+queue = Queue("emotion_detection", connection=redis, default_timeout=3600)
 
 app = FastAPI()
 app.add_middleware(
@@ -157,50 +153,17 @@ def delete_video(video_id: str):
     return {"message": "Video deleted successfully."}
 
 
-@app.post("/videos/{video_id}/process", response_model=EmotionDetection)
+@app.post("/videos/{video_id}/process")
 def process_video(video_id: str):
+    """
+    Enqueue full video processing in the background and return the RQ job ID.
+    """
     record = emotion_detection_collection.find_one({"_id": video_id})
     if not record:
         raise HTTPException(404, "Video not found.")
 
-    video_key = record["video_object"]
-    audio_key = f"audio/{video_id}.wav"
-    updated = {
-        "transcript_process_status": TranscriptProcessStatus.PROCESSING.value,
-    }
-    emotion_detection_collection.update_one({"_id": video_id}, {"$set": updated})
-
-    in_mem = minio.get_fileobj_in_memory(minio.bucket_name, video_key)
-    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_vid:
-        tmp_vid.write(in_mem.read())
-        tmp_vid_path = tmp_vid.name
-
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_wav:
-            tmp_wav_path = tmp_wav.name
-        extract_audio_from_video(tmp_vid_path, tmp_wav_path)
-
-        with open(tmp_wav_path, "rb") as stream:
-            minio.upload_fileobj(stream, minio.bucket_name, audio_key)
-
-        transcript = get_transcript(tmp_wav_path)
-        emotions = emotional_detection_for_each_timestamp(transcript)
-
-    finally:
-        os.remove(tmp_vid_path)
-        os.remove(tmp_wav_path)
-
-    transcript_text = transcript.get("text", "")
-    updated = {
-        "audio_object": audio_key,
-        "transcript": transcript_text,
-        "emotions": emotions,
-        "transcript_process_status": TranscriptProcessStatus.COMPLETED.value,
-    }
-    emotion_detection_collection.update_one({"_id": video_id}, {"$set": updated})
-
-    record.update(updated)
-    return record
+    job = queue.enqueue(process_video_task, video_id, job_id=video_id)
+    return {"job_id": job.id}
 
 
 @app.post("/videos/{id}/analyze")
@@ -213,15 +176,6 @@ def analyze(id: str):
         raise HTTPException(400, "Transcript not found for this video.")
     # job = queue.enqueue(emotional_detection, transcript, job_id=id)
     return {"job_id": "job.id"}
-
-
-@app.post("/enqueue/{steps}")
-def enqueue_test(steps: int):
-    """
-    Enqueue a dummy long-running task (steps seconds) for testing.
-    """
-    job = queue.enqueue(long_task, steps)
-    return {"job_id": job.id}
 
 
 @app.websocket("/ws/status/{job_id}")
