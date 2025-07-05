@@ -12,6 +12,7 @@ export type Emotions = {
 }
 
 export type VideoItem = {
+    _id: string
     id: string
     audio_object: string
     created_at: string
@@ -21,10 +22,6 @@ export type VideoItem = {
     transcript_process_status: "uploaded" | "processing" | "completed"
     video_filename: string
     video_object: string
-}
-
-export type VideoItemRaw = Omit<VideoItem, "id"> & {
-    _id: string
 }
 
 export type VideoColumn = {
