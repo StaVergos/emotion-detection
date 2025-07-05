@@ -165,6 +165,10 @@ def process_video(video_id: str):
 
     video_key = record["video_object"]
     audio_key = f"audio/{video_id}.wav"
+    updated = {
+        "transcript_process_status": TranscriptProcessStatus.PROCESSING.value,
+    }
+    emotion_detection_collection.update_one({"_id": video_id}, {"$set": updated})
 
     in_mem = minio.get_fileobj_in_memory(minio.bucket_name, video_key)
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_vid:
@@ -191,6 +195,7 @@ def process_video(video_id: str):
         "audio_object": audio_key,
         "transcript": transcript_text,
         "emotions": emotions,
+        "transcript_process_status": TranscriptProcessStatus.COMPLETED.value,
     }
     emotion_detection_collection.update_one({"_id": video_id}, {"$set": updated})
 
