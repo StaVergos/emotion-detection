@@ -1,8 +1,8 @@
 from pymongo import MongoClient
+from src.api.config import MONGODB_URI, MONGODB_DB
 
-client = MongoClient("mongodb://localhost:27017/")
-# client = MongoClient("mongodb://mongodb:27017/")
-db = client["emotion_detection_project"]
+client = MongoClient(MONGODB_URI)
+db = client[MONGODB_DB]
 emotion_detection_collection = db.emotion_detection
 
 emotion_detection_collection.create_index("video_filename", unique=True)

@@ -1,8 +1,7 @@
 import io
 import logging
-
-import boto3
 from botocore.client import Config
+import boto3
 
 from src.api.config import (
     MINIO_ENDPOINT,
@@ -19,11 +18,11 @@ logger = logging.getLogger(__name__)
 class MinioClient:
     def __init__(
         self,
-        endpoint=MINIO_ENDPOINT,
-        access_key=ACCESS_KEY,
-        secret_key=SECRET_KEY,
-        region_name=REGION_NAME,
-        signature_version=SIGNATURE_VERSION,
+        endpoint: str = MINIO_ENDPOINT,
+        access_key: str = ACCESS_KEY,
+        secret_key: str = SECRET_KEY,
+        region_name: str = REGION_NAME,
+        signature_version: str = SIGNATURE_VERSION,
         bucket_name: str = DEFAULT_BUCKET_NAME,
     ):
         self.bucket_name = bucket_name
@@ -34,6 +33,11 @@ class MinioClient:
             aws_secret_access_key=secret_key,
             config=Config(signature_version=signature_version),
             region_name=region_name,
+        )
+        logger.info(
+            "MinIO client configured: endpoint=%s bucket=%s",
+            endpoint,
+            bucket_name,
         )
 
     def bucket_exists(self, bucket: str) -> bool:
