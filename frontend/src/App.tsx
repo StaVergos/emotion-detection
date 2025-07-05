@@ -1,4 +1,3 @@
-// frontend/src/App.tsx
 import { useState, useEffect, useCallback } from "react";
 import { AddVideo } from "./components/videos/addVideo";
 import VideoTablePage from "./components/videos/page";
@@ -26,9 +25,12 @@ function App() {
       }
 
       const normalized: VideoItem[] = json.videos.map((raw: any) => ({
-        id: raw._id,
+        id: raw._id.slice(-5),
         audio_object: raw.audio_object,
-        created_at: raw.created_at,
+        created_at: new Date(raw.created_at)
+          .toISOString()
+          .replace("T", " ")
+          .split(".")[0],
         emotion_prompt_result: raw.emotion_prompt_result,
         emotions: raw.emotions,
         transcript: raw.transcript,
@@ -49,6 +51,25 @@ function App() {
     fetchVideos();
   }, [fetchVideos]);
 
+  const handleDelete = useCallback(
+    async (id: string) => {
+      try {
+        const res = await fetch(`http://localhost:8000/videos/${id}`, {
+          method: "DELETE",
+        });
+        if (res.status === 204) {
+          await fetchVideos();
+        } else {
+          const json = await res.json().catch(() => ({}));
+          throw new Error(json.detail ?? `Delete failed (${res.status})`);
+        }
+      } catch (err: any) {
+        alert(`Could not delete video: ${err.message}`);
+      }
+    },
+    [fetchVideos]
+  );
+
   return (
     <div className="flex items-center justify-center h-full">
       <div className="bg-white p-6 rounded-lg shadow-lg max-w-xl w-full text-center space-y-6">
@@ -60,6 +81,7 @@ function App() {
           loading={loading}
           error={errorMessage}
           data={videos}
+          onDelete={handleDelete}
         />
       </div>
     </div>

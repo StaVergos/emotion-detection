@@ -1,16 +1,25 @@
 "use client";
 
-import { columns } from "./columns";
-import type { VideoItem } from "../../types";
+import { useMemo } from "react";
 import { DataTable } from "./data-table";
+import { getVideoColumns } from "./columns";
+import type { VideoItem } from "../../types";
 
 interface VideoTablePageProps {
     loading: boolean;
     error: string | null;
     data: VideoItem[];
+    onDelete: (id: string) => void;
 }
 
-export default function VideoTablePage({ loading, error, data }: VideoTablePageProps) {
+export default function VideoTablePage({
+    loading,
+    error,
+    data,
+    onDelete,
+}: VideoTablePageProps) {
+    const columns = useMemo(() => getVideoColumns(onDelete), [onDelete]);
+
     return (
         <div className="container mx-auto py-10 w-full">
             {loading ? (
