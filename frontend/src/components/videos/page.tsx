@@ -1,4 +1,6 @@
-import { useMemo, useState, useCallback } from "react";
+"use client";
+
+import { useMemo } from "react";
 import { DataTable } from "./data-table";
 import { getVideoColumns } from "./columns";
 import type { VideoItem } from "../../types";
@@ -7,44 +9,22 @@ interface VideoTablePageProps {
     loading: boolean;
     error: string | null;
     data: VideoItem[];
+    processingIds: Set<string>;
     onDelete: (rawId: string) => void;
-    onProcess: (rawId: string) => Promise<void>;
+    onProcess: (rawId: string) => void;
 }
 
 export default function VideoTablePage({
     loading,
     error,
     data,
+    processingIds,
     onDelete,
-    onProcess,   // raw backend-calling callback
+    onProcess,
 }: VideoTablePageProps) {
-    // track which rows are currently being processed
-    const [processingIds, setProcessingIds] = useState<Set<string>>(
-        () => new Set()
-    );
-
-    const processVideo = useCallback(
-        async (rawId: string) => {
-            // start animation
-            setProcessingIds((s) => new Set(s).add(rawId));
-            try {
-                await onProcess(rawId);
-            } finally {
-                // stop animation
-                setProcessingIds((s) => {
-                    const next = new Set(s);
-                    next.delete(rawId);
-                    return next;
-                });
-            }
-        },
-        [onProcess]
-    );
-
-    // rebuild columns whenever delete, process or processing set changes
     const columns = useMemo(
-        () => getVideoColumns(onDelete, processVideo, processingIds),
-        [onDelete, processVideo, processingIds]
+        () => getVideoColumns(onDelete, onProcess, processingIds),
+        [onDelete, onProcess, processingIds]
     );
 
     return (
