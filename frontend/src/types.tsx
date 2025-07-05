@@ -23,6 +23,10 @@ export type VideoItem = {
     video_object: string
 }
 
+export type VideoItemRaw = Omit<VideoItem, "id"> & {
+    _id: string
+}
+
 export type VideoColumn = {
     id: string
     video_filename: string

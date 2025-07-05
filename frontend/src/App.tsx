@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { AddVideo } from "./components/videos/addVideo";
 import VideoTablePage from "./components/videos/page";
-import type { VideoItem } from "./types";
+import type { VideoItem, VideoItemRaw } from "./types";
 
 function App() {
   const [videos, setVideos] = useState<VideoItem[]>([]);
@@ -24,7 +24,7 @@ function App() {
         throw new Error(detail);
       }
 
-      const normalized: VideoItem[] = json.videos.map((raw: any) => ({
+      const normalized: VideoItem[] = json.videos.map((raw: VideoItemRaw) => ({
         id: raw._id.slice(-5),
         audio_object: raw.audio_object,
         created_at: new Date(raw.created_at)
