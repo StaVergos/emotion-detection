@@ -26,7 +26,8 @@ function ProcessingIndicator() {
 export function getVideoColumns(
     onDelete: (rawId: string) => void,
     onProcess: (rawId: string) => void,
-    processingIds: Set<string>
+    processingIds: Set<string>,
+    onViewTranscript: (text: string) => void
 ): ColumnDef<VideoItem>[] {
     return [
         {
@@ -58,6 +59,7 @@ export function getVideoColumns(
             cell: ({ row }) => {
                 const video = row.original;
                 const canProcess = video.transcript_process_status === "uploaded";
+                const canView = video.transcript_process_status === "completed";
 
                 return (
                     <DropdownMenu>
@@ -83,6 +85,15 @@ export function getVideoColumns(
                                 disabled={!canProcess}
                             >
                                 Process transcript
+                            </DropdownMenuItem>
+
+                            <DropdownMenuSeparator />
+
+                            <DropdownMenuItem
+                                onClick={() => onViewTranscript(video.transcript ?? "")}
+                                disabled={!canView}
+                            >
+                                View transcript
                             </DropdownMenuItem>
 
                             <DropdownMenuSeparator />
