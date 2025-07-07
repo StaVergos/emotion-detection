@@ -1,5 +1,6 @@
 import os
 import logging
+import torch
 
 
 def get_logger():
@@ -23,3 +24,4 @@ SECRET_KEY = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
 REGION_NAME = os.getenv("MINIO_REGION", "us-east-1")
 SIGNATURE_VERSION = os.getenv("MINIO_SIGNATURE_VERSION", "s3v4")
 DEFAULT_BUCKET_NAME = os.getenv("MINIO_BUCKET", "emotion-detection")
+DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
