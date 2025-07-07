@@ -1,31 +1,26 @@
 from transformers import pipeline
-import torch
 import time
-from src.api.config import get_logger
+from src.api.config import get_logger, DEVICE
 
 logger = get_logger()
 
 init_start = time.time()
-# --- load once, at import time ---
-device = 0 if torch.cuda.is_available() else -1  # use GPU if present
 emotion_pipe = pipeline(
     "text-classification",
     model="j-hartmann/emotion-english-distilroberta-base",
     return_all_scores=False,
-    device=device,
+    device=DEVICE,
 )
 logger.info(f"Emotion detection model loaded in {time.time() - init_start:.2f} seconds")
 
 
 def emotional_detection(transcript: dict) -> str:
     start_time = time.time()
-    # unwrap Whisper output if needed
     text = transcript.get("text", transcript)
     prompt = (
         "Given the following transcript, identify the speaker's emotion:\n"
         f"{text}\nEmotion:"
     )
-    # returns e.g. [{"label":"anger","score":0.98}]
     result = emotion_pipe(prompt)
     end_time = time.time()
     logger.info(f"Emotion detection completed in {end_time - start_time:.2f} seconds")
@@ -80,7 +75,6 @@ def emotional_detection_for_each_timestamp(transcript: dict) -> list:
     print(
         f"Emotion detection for each timestamp completed in {end_time - start_time:.2f} seconds"
     )
-    # get the transcript text for each segment add the emotion to the segment
     transcript_chunks = transcript.get("chunks", [])
     for i, segment in enumerate(transcript_chunks):
         segment["emotion"] = emotions[i]["emotions"][0]["label"]
