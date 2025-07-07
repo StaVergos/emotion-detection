@@ -34,7 +34,6 @@ from src.api.schemas import (
 )
 from src.api.exceptions import APIError
 
-from src.tasks import process_video_task
 
 logger = get_logger()
 minio = MinioClient()
@@ -153,8 +152,8 @@ def delete_video(video_id: str):
     return {"message": "Video deleted successfully."}
 
 
-@app.post("/videos/{video_id}/process")
-def process_video(video_id: str):
+@app.post("/videos/{video_id}/transcript")
+def transcript_video(video_id: str):
     """
     Enqueue full video processing in the background and return the RQ job ID.
     """
@@ -162,7 +161,7 @@ def process_video(video_id: str):
     if not record:
         raise HTTPException(404, "Video not found.")
 
-    job = queue.enqueue(process_video_task, video_id, job_id=video_id)
+    job = queue.enqueue("src.tasks.process_video_task", video_id, job_id=video_id)
     return {"job_id": job.id}
 
 

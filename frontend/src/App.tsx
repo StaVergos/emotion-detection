@@ -75,13 +75,13 @@ function App() {
   const handleProcess = useCallback(
     async (rawId: string) => {
       const res = await fetch(
-        `http://localhost:8000/videos/${rawId}/process`,
+        `http://localhost:8000/videos/${rawId}/transcript`,
         { method: "POST" }
       );
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
         throw new Error(
-          json.detail ?? `Failed to start processing (${res.status})`
+          json.detail ?? `Failed to start video transcription (${res.status})`
         );
       }
       const { job_id } = await res.json();
@@ -126,7 +126,7 @@ function App() {
   return (
     <div className="flex items-center justify-center h-full">
       <div className="bg-white p-6 rounded-lg shadow-lg max-w-xl w-full text-center space-y-6">
-        <h1 className="text-2xl font-bold">Emotion Detection Dashboard</h1>
+        <h1 className="text-2xl font-bold">Emotion Detection</h1>
 
         <AddVideo onUploadSuccess={fetchVideos} />
 
