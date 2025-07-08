@@ -33,6 +33,7 @@ from src.api.schemas import (
     VideosResponse,
     VideoError,
 )
+from src.analysis.audio_emotion import get_emotion_scores_from_file
 from src.api.exceptions import APIError
 from src.tasks import extract_audio_task, transcribe_task
 
@@ -156,7 +157,6 @@ def delete_video(video_id: str):
         minio.s3.delete_object(Bucket=minio.bucket_name, Key=audio_key)
 
     emotion_detection_collection.delete_one({"_id": video_id})
-
     return {"message": "Video deleted successfully."}
 
 
@@ -182,6 +182,32 @@ def analyze(id: str):
     if not transcript:
         raise HTTPException(400, "Transcript not found for this video.")
     return {"job_id": "job.id"}
+
+
+@app.get("/videos/{video_id}/audio_emotion")
+def get_audio_emotion(video_id: str):
+    record = emotion_detection_collection.find_one({"_id": video_id})
+    if not record:
+        raise HTTPException(404, "Video not found.")
+    audio_key = record.get("audio_object")
+    if not audio_key:
+        raise HTTPException(404, "Audio object not found. Please extract audio first.")
+
+    # write bytes out to a real temp .wav so soundfile can open it
+    in_mem = minio.get_fileobj_in_memory(minio.bucket_name, audio_key)
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        tmp.write(in_mem.read())
+        tmp_path = tmp.name
+    try:
+        emotion_scores = get_emotion_scores_from_file(tmp_path)
+    finally:
+        os.remove(tmp_path)
+
+    return {
+        "video_id": video_id,
+        "emotion_scores": emotion_scores,
+        "audio_object": audio_key,
+    }
 
 
 @app.websocket("/ws/status/{job_id}")
