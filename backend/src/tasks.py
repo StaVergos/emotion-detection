@@ -5,8 +5,8 @@ from rq import get_current_job
 from src.minio import MinioClient
 from src.mongodb import emotion_detection_collection
 from src.preprocessing import extract_audio_from_video
-from src.transcript import get_transcript
-from src.short import emotional_detection_for_each_timestamp
+from src.analysis.transcript import get_transcript
+from src.analysis.short import emotional_detection_for_each_timestamp
 from src.api.schemas import TranscriptProcessStatus
 
 minio = MinioClient()
