@@ -3,8 +3,8 @@ from rq import get_current_job
 from transformers import AutoTokenizer, AutoModelForCausalLM, GenerationConfig
 import torch
 
-from src.constants import EMOTION_LLM_MODEL
-from backend.src.api.config import get_logger
+from src.api.constants import EMOTION_LLM_MODEL
+from src.api.config import get_logger
 
 logger = get_logger()
 

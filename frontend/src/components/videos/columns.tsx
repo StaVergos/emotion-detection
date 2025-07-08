@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { VideoItem } from "../../types";
 
-function ProcessingIndicator() {
+const StageIndicator = React.memo(({ label }: { label: string }) => {
     const [dots, setDots] = useState(0);
     useEffect(() => {
         const id = setInterval(() => {
@@ -20,47 +20,41 @@ function ProcessingIndicator() {
         }, 500);
         return () => clearInterval(id);
     }, []);
-    return <span>processing{".".repeat(dots)}</span>;
-}
+    return (
+        <span>
+            {label}
+            {".".repeat(dots)}
+        </span>
+    );
+});
 
 export function getVideoColumns(
     onDelete: (rawId: string) => void,
     onProcess: (rawId: string) => void,
-    processingIds: Set<string>,
-    onViewTranscript: (text: string) => void
+    processingStatusRef: React.RefObject<Record<string, string>>
 ): ColumnDef<VideoItem>[] {
     return [
-        {
-            accessorKey: "id",
-            header: "ID",
-        },
-        {
-            accessorKey: "video_filename",
-            header: "Video File",
-        },
+        { accessorKey: "id", header: "ID" },
+        { accessorKey: "video_filename", header: "Video File" },
         {
             id: "transcript_status",
             header: "Transcript Status",
             cell: ({ row }) => {
-                const video = row.original;
-                if (processingIds.has(video._id)) {
-                    return <ProcessingIndicator />;
+                const vid = row.original;
+                const label = processingStatusRef.current?.[vid._id];
+                if (label) {
+                    return <StageIndicator label={label} />;
                 }
-                return <span>{video.transcript_process_status}</span>;
+                return <span>{vid.transcript_process_status}</span>;
             },
         },
-        {
-            accessorKey: "created_at",
-            header: "Created At",
-        },
+        { accessorKey: "created_at", header: "Created At" },
         {
             id: "actions",
             header: "Actions",
             cell: ({ row }) => {
                 const video = row.original;
                 const canProcess = video.transcript_process_status === "uploaded";
-                const canView = video.transcript_process_status === "completed";
-
                 return (
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -71,33 +65,19 @@ export function getVideoColumns(
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                             <DropdownMenuLabel>Actions</DropdownMenuLabel>
-
                             <DropdownMenuItem
-                                onClick={() => navigator.clipboard.writeText(video.id)}
+                                onClick={() => navigator.clipboard.writeText(video._id)}
                             >
                                 Copy video ID
                             </DropdownMenuItem>
-
                             <DropdownMenuSeparator />
-
                             <DropdownMenuItem
                                 onClick={() => onProcess(video._id)}
                                 disabled={!canProcess}
                             >
                                 Process transcript
                             </DropdownMenuItem>
-
                             <DropdownMenuSeparator />
-
-                            <DropdownMenuItem
-                                onClick={() => onViewTranscript(video.transcript ?? "")}
-                                disabled={!canView}
-                            >
-                                View transcript
-                            </DropdownMenuItem>
-
-                            <DropdownMenuSeparator />
-
                             <DropdownMenuItem onClick={() => onDelete(video._id)}>
                                 Delete video
                             </DropdownMenuItem>

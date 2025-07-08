@@ -18,6 +18,7 @@ class EmotionType(StrEnum):
 
 
 class TranscriptProcessStatus(StrEnum):
+    UPLOADING = "uploading"
     UPLOADED = "uploaded"
     PROCESSING = "processing"
     COMPLETED = "completed"
@@ -68,8 +69,8 @@ class VideoMetadata(BaseModel):
         default_factory=datetime.now(timezone.utc),
         description="UTC timestamp when this record was created",
     )
-    transcript_process_status: TranscriptProcessStatus = Field(
-        default="uploaded",
+    transcript_process_status: TranscriptProcessStatus | None = Field(
+        default=None,
         description="Current status of the video processing (e.g., 'uploaded', 'processing', 'completed')",
     )
     model_config = ConfigDict(
@@ -127,6 +128,13 @@ class EmotionDetection(VideoMetadata):
 class VideoListItem(EmotionDetection):
     id: PyObjectId = Field(alias="_id", description="MongoDB document ID as string")
     model_config = ConfigDict(populate_by_name=True)
+
+
+class UploadeVideoResponse(VideoListItem):
+    extract_job_id: str = Field(
+        description="Unique identifier for the video processing job",
+        example="1234567890abcdef",
+    )
 
 
 class JobStatus(BaseModel):

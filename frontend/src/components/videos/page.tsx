@@ -1,16 +1,15 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo, useRef, useEffect } from "react";
 import { DataTable } from "./data-table";
 import { getVideoColumns } from "./columns";
-import { Dialog, DialogTrigger, DialogContent, DialogTitle, DialogDescription, DialogClose } from "@/components/ui/dialog";
 import type { VideoItem } from "../../types";
 
 interface VideoTablePageProps {
     loading: boolean;
     error: string | null;
     data: VideoItem[];
-    processingIds: Set<string>;
+    processingStatus: Record<string, string>;
     onDelete: (rawId: string) => void;
     onProcess: (rawId: string) => void;
 }
@@ -19,52 +18,32 @@ export default function VideoTablePage({
     loading,
     error,
     data,
-    processingIds,
+    processingStatus,
     onDelete,
     onProcess,
 }: VideoTablePageProps) {
-    const [isOpen, setIsOpen] = useState(false);
-    const [currentTranscript, setCurrentTranscript] = useState<string>("");
+    // keep a ref to avoid stale closures
+    const statusRef = useRef(processingStatus);
+    useEffect(() => {
+        statusRef.current = processingStatus;
+    }, [processingStatus]);
 
-    const handleViewTranscript = (text: string) => {
-        setCurrentTranscript(text);
-        setIsOpen(true);
-    };
-
-    const columns = useMemo(
-        () =>
-            getVideoColumns(
-                onDelete,
-                onProcess,
-                processingIds,
-                handleViewTranscript
-            ),
-        [onDelete, onProcess, processingIds]
+    const processingKeyString = useMemo(
+        () => Object.keys(processingStatus).sort().join(","),
+        [processingStatus]
     );
 
-    return (
-        <>
-            <Dialog open={isOpen} onOpenChange={setIsOpen}>
-                <DialogContent>
-                    <DialogTitle>Transcript</DialogTitle>
-                    <DialogDescription asChild>
-                        <pre className="whitespace-pre-wrap text-sm">
-                            {currentTranscript}
-                        </pre>
-                    </DialogDescription>
-                    <DialogClose className="mt-4">Close</DialogClose>
-                </DialogContent>
-            </Dialog>
+    const columns = useMemo(
+        () => getVideoColumns(onDelete, onProcess, statusRef),
+        [onDelete, onProcess, processingKeyString]
+    );
 
-            <div className="container mx-auto py-10 w-full">
-                {loading ? (
-                    <div className="text-center py-20">Loading…</div>
-                ) : error ? (
-                    <div className="text-red-600 text-center py-20">{error}</div>
-                ) : (
-                    <DataTable columns={columns} data={data} />
-                )}
-            </div>
-        </>
+    if (loading) return <div className="text-center py-20">Loading…</div>;
+    if (error) return <div className="text-red-600 text-center py-20">{error}</div>;
+
+    return (
+        <div className="container mx-auto py-10 w-full">
+            <DataTable columns={columns} data={data} />
+        </div>
     );
 }

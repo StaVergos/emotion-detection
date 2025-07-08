@@ -8,9 +8,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setError] = useState<string | null>(null);
 
-  const [processingIds, setProcessingIds] = useState<Set<string>>(
-    () => new Set()
-  );
+  const [processingStatus, setProcessingStatus] = useState<Record<string, string>>({});
   const wsRefs = useRef<Record<string, WebSocket>>({});
 
   const fetchVideos = useCallback(async () => {
@@ -40,6 +38,7 @@ function App() {
         transcript_process_status: raw.transcript_process_status,
         video_filename: raw.video_filename,
         video_object: raw.video_object,
+        extract_job_id: raw.extract_job_id,
       }));
       setVideos(normalized);
     } catch (err: any) {
@@ -52,6 +51,61 @@ function App() {
   useEffect(() => {
     fetchVideos();
   }, [fetchVideos]);
+
+  const listenToJob = useCallback(
+    (videoId: string, jobId: string, initialLabel: string) => {
+      setProcessingStatus((ps) => ({ ...ps, [videoId]: initialLabel }));
+      const ws = new WebSocket(`ws://localhost:8000/ws/status/${jobId}`);
+      wsRefs.current[jobId] = ws;
+
+      ws.onmessage = (evt) => {
+        const msg = JSON.parse(evt.data) as { status: string; meta: any };
+
+        setProcessingStatus((ps) => ({ ...ps, [videoId]: initialLabel }));
+
+        if (msg.status === "finished" || msg.status === "failed") {
+          ws.close();
+          setProcessingStatus((ps) => {
+            const nxt = { ...ps };
+            delete nxt[videoId];
+            return nxt;
+          });
+          fetchVideos();
+        }
+      };
+
+      ws.onerror = () => {
+        ws.close();
+        setProcessingStatus((ps) => {
+          const nxt = { ...ps };
+          delete nxt[videoId];
+          return nxt;
+        });
+      };
+    },
+    [fetchVideos]
+  );
+
+  const handleUploadSuccess = useCallback(
+    (videoId: string, extractJobId: string) => {
+      listenToJob(videoId, extractJobId, "uploading");
+      fetchVideos();
+    },
+    [listenToJob, fetchVideos]
+  );
+
+  const handleTranscribe = useCallback(
+    async (videoId: string) => {
+      const res = await fetch(
+        `http://localhost:8000/videos/${videoId}/transcript`,
+        { method: "POST" }
+      );
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.detail ?? `Error ${res.status}`);
+      listenToJob(videoId, body.job_id, "transcribing");
+    },
+    [listenToJob]
+  );
 
   const handleDelete = useCallback(
     async (rawId: string) => {
@@ -72,51 +126,6 @@ function App() {
     [fetchVideos]
   );
 
-  const handleProcess = useCallback(
-    async (rawId: string) => {
-      const res = await fetch(
-        `http://localhost:8000/videos/${rawId}/transcript`,
-        { method: "POST" }
-      );
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(
-          json.detail ?? `Failed to start video transcription (${res.status})`
-        );
-      }
-      const { job_id } = await res.json();
-
-      setProcessingIds((prev) => {
-        const nxt = new Set(prev);
-        nxt.add(rawId);
-        return nxt;
-      });
-
-      const ws = new WebSocket(`ws://localhost:8000/ws/status/${job_id}`);
-      wsRefs.current[rawId] = ws;
-
-      ws.onmessage = (evt) => {
-        const msg: { status: string; meta: Record<string, any> } =
-          JSON.parse(evt.data);
-        if (msg.status === "finished" || msg.status === "failed") {
-          ws.close();
-          delete wsRefs.current[rawId];
-          setProcessingIds((prev) => {
-            const nxt = new Set(prev);
-            nxt.delete(rawId);
-            return nxt;
-          });
-          fetchVideos();
-        }
-      };
-
-      ws.onerror = () => {
-        alert(`WebSocket error for job ${job_id}`);
-      };
-    },
-    [fetchVideos]
-  );
-
   useEffect(() => {
     return () => {
       Object.values(wsRefs.current).forEach((ws) => ws.close());
@@ -128,15 +137,15 @@ function App() {
       <div className="bg-white p-6 rounded-lg shadow-lg max-w-xl w-full text-center space-y-6">
         <h1 className="text-2xl font-bold">Emotion Detection</h1>
 
-        <AddVideo onUploadSuccess={fetchVideos} />
+        <AddVideo onUploadSuccess={(vidId, jobId) => handleUploadSuccess(vidId, jobId)} />
 
         <VideoTablePage
           loading={loading}
           error={errorMessage}
           data={videos}
-          processingIds={processingIds}
+          processingStatus={processingStatus}
           onDelete={handleDelete}
-          onProcess={handleProcess}
+          onProcess={handleTranscribe}
         />
       </div>
     </div>

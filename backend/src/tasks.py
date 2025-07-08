@@ -12,51 +12,38 @@ from src.api.schemas import TranscriptProcessStatus
 minio = MinioClient()
 
 
-def process_video_task(video_id: str) -> None:
+def extract_audio_task(video_id: str) -> str:
     job = get_current_job()
-
-    emotion_detection_collection.update_one(
-        {"_id": video_id},
-        {
-            "$set": {
-                "transcript_process_status": TranscriptProcessStatus.PROCESSING.value
-            }
-        },
-    )
-    job.meta["step"] = "started"
+    job.meta["step"] = "started_extraction"
     job.save_meta()
 
     record = emotion_detection_collection.find_one({"_id": video_id})
+    if not record:
+        job.meta["step"] = "error:missing_record"
+        job.save_meta()
+        raise RuntimeError(f"Record not found for video_id {video_id}")
     video_key = record.get("video_object")
     if not video_key:
-        job.meta["step"] = "error: missing video_object"
+        job.meta["step"] = "error:missing_video_object"
         job.save_meta()
         raise RuntimeError(f"Missing video_object for {video_id}")
 
     in_mem = minio.get_fileobj_in_memory(minio.bucket_name, video_key)
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp_vid:
         tmp_vid.write(in_mem.read())
-        tmp_vid_path = tmp_vid.name
+        vid_path = tmp_vid.name
 
     try:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_wav:
-            tmp_wav_path = tmp_wav.name
-        extract_audio_from_video(tmp_vid_path, tmp_wav_path)
-        job.meta["step"] = "audio extracted"
+            wav_path = tmp_wav.name
+        extract_audio_from_video(vid_path, wav_path)
+        job.meta["step"] = "audio_extracted"
         job.save_meta()
 
         audio_key = f"audio/{video_id}.wav"
-        with open(tmp_wav_path, "rb") as stream:
+        with open(wav_path, "rb") as stream:
             minio.upload_fileobj(stream, minio.bucket_name, audio_key)
-        job.meta["step"] = "audio uploaded"
-        job.save_meta()
-
-        transcript_res = get_transcript(tmp_wav_path)
-        job.meta["step"] = "transcribed"
-        job.save_meta()
-
-        emotions = emotional_detection_for_each_timestamp(transcript_res)
-        job.meta["step"] = "emotions detected"
+        job.meta["step"] = "audio_uploaded"
         job.save_meta()
 
         emotion_detection_collection.update_one(
@@ -64,18 +51,59 @@ def process_video_task(video_id: str) -> None:
             {
                 "$set": {
                     "audio_object": audio_key,
+                    "transcript_process_status": TranscriptProcessStatus.UPLOADED.value,
+                }
+            },
+        )
+
+        job.meta["audio_key"] = audio_key
+        job.meta["step"] = "done_extraction"
+        job.save_meta()
+        return audio_key
+
+    finally:
+        for p in (vid_path, wav_path):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+
+
+def transcribe_task(video_id: str, audio_key: str) -> None:
+    job = get_current_job()
+    job.meta["step"] = "started_transcription"
+    job.meta["audio_key"] = audio_key
+    job.save_meta()
+
+    in_mem = minio.get_fileobj_in_memory(minio.bucket_name, audio_key)
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_wav:
+        tmp_wav.write(in_mem.read())
+        wav_path = tmp_wav.name
+
+    try:
+        transcript_res = get_transcript(wav_path)
+        job.meta["step"] = "transcribed"
+        job.save_meta()
+
+        emotions = emotional_detection_for_each_timestamp(transcript_res)
+        job.meta["step"] = "emotions_detected"
+        job.save_meta()
+
+        emotion_detection_collection.update_one(
+            {"_id": video_id},
+            {
+                "$set": {
                     "transcript": transcript_res.get("text", ""),
                     "emotions": emotions,
                     "transcript_process_status": TranscriptProcessStatus.COMPLETED.value,
                 }
             },
         )
-        job.meta["step"] = "done"
+        job.meta["step"] = "done_transcription"
         job.save_meta()
 
     finally:
         try:
-            os.remove(tmp_vid_path)
-            os.remove(tmp_wav_path)
+            os.remove(wav_path)
         except OSError:
             pass

@@ -13,20 +13,21 @@ export type Emotions = {
 
 export type VideoItem = {
     _id: string
-    id: string
+    id?: string
     audio_object: string
     created_at: string
     emotion_prompt_result: string
     emotions: Emotions[]
     transcript: string
-    transcript_process_status: "uploaded" | "processing" | "completed"
+    transcript_process_status: "uploading" | "uploaded" | "processing" | "completed"
     video_filename: string
     video_object: string
+    extract_job_id?: string
 }
 
 export type VideoColumn = {
     id: string
     video_filename: string
-    transcript_process_status: "uploaded" | "processing" | "completed"
+    transcript_process_status: "uploading" | "uploaded" | "processing" | "completed"
     created_at: string
 }

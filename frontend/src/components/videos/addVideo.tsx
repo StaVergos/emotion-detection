@@ -2,19 +2,16 @@ import { useState, useRef, type FormEvent } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import type { VideoItem } from "@/types";
 
 interface AddVideoProps {
-    onUploadSuccess: () => void;
+    onUploadSuccess: (videoId: string, extractJobId: string) => void;
 }
 
 export function AddVideo({ onUploadSuccess }: AddVideoProps) {
     const [file, setFile] = useState<File | null>(null);
-    const [status, setStatus] = useState<
-        "idle" | "uploading" | "success" | "error"
-    >("idle");
+    const [status, setStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
     const [errorMsg, setErrorMsg] = useState<string>("");
-
-    // ← create a ref for the <input type="file" />
     const inputRef = useRef<HTMLInputElement>(null);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -41,24 +38,22 @@ export function AddVideo({ onUploadSuccess }: AddVideoProps) {
                 method: "POST",
                 body: formData,
             });
+            const json = await res.json();
 
             if (res.status === 201) {
+                const videoId = (json as VideoItem)._id as string;
+                const extractJobId = (json as VideoItem).extract_job_id as string;
+
                 setStatus("success");
                 setFile(null);
+                if (inputRef.current) inputRef.current.value = "";
 
-                // ← clear the file input via ref
-                if (inputRef.current) {
-                    inputRef.current.value = "";
-                }
-
-                // trigger parent to refetch
-                onUploadSuccess();
+                onUploadSuccess(videoId, extractJobId);
             } else {
-                const json = await res.json().catch(() => null);
                 const detail =
-                    json && typeof json === "object" && "detail" in json
-                        ? json.detail
-                        : `Server responded with ${res.status}`;
+                    typeof json === "object" && "detail" in json
+                        ? (json as any).detail
+                        : `Server responded ${res.status}`;
                 throw new Error(detail);
             }
         } catch (err: any) {
@@ -79,13 +74,12 @@ export function AddVideo({ onUploadSuccess }: AddVideoProps) {
                     type="file"
                     accept="video/mp4"
                     onChange={handleFileChange}
-                    // ← attach the ref here
                     ref={inputRef}
                 />
             </div>
 
             <Button type="submit" disabled={status === "uploading"}>
-                {status === "uploading" ? "Uploading…" : "Upload Video"}
+                {status === "uploading" ? "uploading…" : "Upload Video"}
             </Button>
 
             {status === "success" && (

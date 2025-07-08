@@ -1,3 +1,4 @@
+# backend/main.py
 import asyncio
 import os
 import shutil
@@ -27,13 +28,13 @@ from src.minio import MinioClient
 from src.mongodb import emotion_detection_collection, check_record_exists
 from src.api.schemas import (
     Error,
+    UploadeVideoResponse,
     VideoListItem,
-    TranscriptProcessStatus,
     VideosResponse,
     VideoError,
 )
 from src.api.exceptions import APIError
-
+from src.tasks import extract_audio_task, transcribe_task
 
 logger = get_logger()
 minio = MinioClient()
@@ -80,7 +81,7 @@ def get_video(video_id: str):
 @app.post(
     "/videos",
     status_code=status.HTTP_201_CREATED,
-    response_model=VideoListItem,
+    response_model=UploadeVideoResponse,
     responses={400: {"model": VideoError}, 409: {"model": VideoError}},
 )
 def upload_video(file: UploadFile):
@@ -127,11 +128,18 @@ def upload_video(file: UploadFile):
         "video_filename": orig_name,
         "video_object": video_key,
         "created_at": created_at,
-        "transcript_process_status": TranscriptProcessStatus.UPLOADED.value,
+        "transcript_process_status": None,
     }
     emotion_detection_collection.insert_one(doc)
 
-    return doc
+    extract_job = queue.enqueue(
+        extract_audio_task,
+        upload_id,
+        job_id=f"{upload_id}-extract",
+        ttl=3600,
+    )
+
+    return {**doc, "extract_job_id": extract_job.id}
 
 
 @app.delete("/videos/{video_id}", status_code=204)
@@ -154,14 +162,14 @@ def delete_video(video_id: str):
 
 @app.post("/videos/{video_id}/transcript")
 def transcript_video(video_id: str):
-    """
-    Enqueue full video processing in the background and return the RQ job ID.
-    """
     record = emotion_detection_collection.find_one({"_id": video_id})
     if not record:
         raise HTTPException(404, "Video not found.")
+    record_key = record.get("audio_object", None)
+    if not record_key:
+        raise HTTPException(404, "Audio object not found. Please extract audio first.")
 
-    job = queue.enqueue("src.tasks.process_video_task", video_id, job_id=video_id)
+    job = queue.enqueue(transcribe_task, video_id, record_key, job_id=video_id)
     return {"job_id": job.id}
 
 
@@ -173,7 +181,6 @@ def analyze(id: str):
     transcript = record.get("transcript")
     if not transcript:
         raise HTTPException(400, "Transcript not found for this video.")
-    # job = queue.enqueue(emotional_detection, transcript, job_id=id)
     return {"job_id": "job.id"}
 
 
