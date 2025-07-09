@@ -1,9 +1,10 @@
 import os
 import tempfile
+import time
+from rq import get_current_job, Queue
+from redis import Redis
+
 from src.api.config import get_logger
-
-from rq import get_current_job
-
 from src.minio import MinioClient
 from src.mongodb import emotion_detection_collection
 from src.file_processing import break_audio_into_chunks, extract_audio_from_video
@@ -11,66 +12,114 @@ from src.analysis.transcript import get_transcript
 from src.analysis.short import emotional_detection_for_each_timestamp
 from src.api.schemas import (
     TranscriptProcessStatus,
-    TranscriptionChunk,
-    TranscriptionResult,
     EmotionDetectionItem,
+    TranscriptionResult,
 )
 
 logger = get_logger()
 
 minio = MinioClient()
+redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+redis_conn = Redis.from_url(redis_url)
+queue = Queue("emotion_detection", connection=redis_conn, default_timeout=360)
 
 
-def process_video_task(video_id: str) -> None:
+def extract_audio_task(video_id: str) -> None:
+    start_time = time.time()
     job = get_current_job()
-    job.meta["step"] = "fetching_video"
+    logger.info(f"[{video_id}] Starting extract_audio_task")
+    job.meta["step"] = "extracting_audio"
     job.save_meta()
-    record_data = emotion_detection_collection.find_one({"_id": video_id})
-    if not record_data:
-        raise RuntimeError(f"No record found for video ID: {video_id}")
-    emotion_detection_item = EmotionDetectionItem.model_validate(record_data)
-    if not emotion_detection_item:
-        raise RuntimeError(f"No record for {video_id}")
 
-    video_object_path = emotion_detection_item.video_object_path
-    data = minio.get_fileobj_in_memory(minio.bucket_name, video_object_path).read()
+    record = emotion_detection_collection.find_one({"_id": video_id})
+    if not record:
+        msg = f"No record found for video {video_id}"
+        logger.error(msg)
+        raise RuntimeError(msg)
+
+    item = EmotionDetectionItem.model_validate(record)
+    data = minio.get_fileobj_in_memory(minio.bucket_name, item.video_object_path).read()
+
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as vf:
         vf.write(data)
-        vid_path = vf.name
-
+        video_path = vf.name
     try:
-        job.meta["step"] = "extracting_audio"
-        job.save_meta()
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as af:
             wav_path = af.name
-        extract_audio_from_video(vid_path, wav_path)
+        extract_audio_from_video(video_path, wav_path)
 
         audio_key = f"audio/{video_id}.wav"
-        with open(wav_path, "rb") as stream:
-            minio.upload_fileobj(stream, minio.bucket_name, audio_key)
-
-        emotion_detection_item.audio_object_path = audio_key
-        emotion_detection_item.transcript_process_status = (
-            TranscriptProcessStatus.UPLOADED.value
-        )
-        document_to_update = emotion_detection_item.as_document()
+        with open(wav_path, "rb") as wf:
+            minio.upload_fileobj(wf, minio.bucket_name, audio_key)
 
         emotion_detection_collection.update_one(
             {"_id": video_id},
-            {"$set": document_to_update},
+            {
+                "$set": {
+                    "audio_object_path": audio_key,
+                    "transcript_process_status": TranscriptProcessStatus.UPLOADED.value,
+                }
+            },
         )
-
+        logger.info(f"[{video_id}]: Audio extracted and uploaded to {audio_key}")
+        logger.info(
+            f"[{video_id}]: Audio extraction completed in {time.time() - start_time:.2f} seconds"
+        )
         job.meta.update(audio_key=audio_key, step="audio_uploaded")
         job.save_meta()
+    finally:
+        for path in (video_path, wav_path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        logger.info(
+            f"[{video_id}] Temporary files cleaned up: {video_path}, {wav_path}"
+        )
 
-        job.meta["step"] = "transcribing"
-        job.save_meta()
+
+def analyze_audio_task(video_id: str) -> None:
+    start_time = time.time()
+    job = get_current_job()
+    logger.info(f"[{video_id}] Starting analyze_audio_task")
+    job.meta["step"] = "analyzing_audio"
+    job.save_meta()
+
+    record = emotion_detection_collection.find_one({"_id": video_id})
+    if not record:
+        msg = f"No record for video {video_id}"
+        logger.error(msg)
+        raise RuntimeError(msg)
+
+    emotion_detection_item = EmotionDetectionItem.model_validate(record)
+    if not emotion_detection_item.audio_object_path:
+        msg = f"Missing audio for video {video_id}"
+        logger.error(msg)
+        raise RuntimeError(msg)
+
+    data = minio.get_fileobj_in_memory(
+        minio.bucket_name, emotion_detection_item.audio_object_path
+    ).read()
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as af:
+        af.write(data)
+        wav_path = af.name
+    extracted_audio_timestamp = time.time()
+    logger.info(
+        f"[{video_id}]: Audio extracted to {wav_path} in {extracted_audio_timestamp - start_time:.2f} seconds"
+    )
+    try:
         transcription_result: TranscriptionResult = get_transcript(wav_path)
-        logger.info(f"Transcription result: {transcription_result}")
-        job.meta["step"] = "transcribed"
-        job.save_meta()
+        transcription_timestamp = time.time()
+        logger.info(
+            f"[{video_id}]: Transcription complete in {transcription_timestamp - extracted_audio_timestamp:.2f} seconds"
+        )
 
+        logger.info(f"[{video_id}]: Starting emotion detection")
         emotion_chunks = emotional_detection_for_each_timestamp(transcription_result)
+        emotion_detection_timestamp = time.time()
+        logger.info(
+            f"[{video_id}]: Detected {len(emotion_chunks)} emotion chunks in {emotion_detection_timestamp - transcription_timestamp:.2f} seconds"
+        )
         emotion_detection_item.transcription_result = transcription_result.text
         emotion_detection_item.emotion_chunks = emotion_chunks
         document_to_update = emotion_detection_item.as_document()
@@ -80,57 +129,115 @@ def process_video_task(video_id: str) -> None:
                 "$set": document_to_update,
             },
         )
-        job.meta["step"] = "emotions_detected"
+        logger.info(
+            f"[{video_id}] Emotion detection completed and updated in database in {time.time() - start_time:.2f} seconds"
+        )
+        job.meta.update(segments=len(emotion_chunks), step="emotions_detected")
         job.save_meta()
+    finally:
+        try:
+            os.remove(wav_path)
+        except OSError:
+            pass
+    logger.info(f"[{video_id}] Temporary file {wav_path} cleaned up")
 
-        job.meta["step"] = "chunking_audio"
-        job.save_meta()
-        timestamps = [tuple(e.timestamp) for e in emotion_chunks if e.timestamp]
+
+def chunk_audio_task(video_id: str) -> None:
+    start_time = time.time()
+    logger.info(f"[{video_id}]: Starting chunk_audio_task")
+    job = get_current_job()
+    job.meta["step"] = "chunking_audio"
+    job.save_meta()
+
+    record = emotion_detection_collection.find_one({"_id": video_id})
+    if not record:
+        msg = f"No record for video {video_id}"
+        logger.error(msg)
+        raise RuntimeError(msg)
+
+    emotion_detection_item = EmotionDetectionItem.model_validate(record)
+    if (
+        not emotion_detection_item.audio_object_path
+        or not emotion_detection_item.emotion_chunks
+    ):
+        msg = f"Incomplete data for video {video_id}"
+        logger.error(msg)
+        raise RuntimeError(msg)
+
+    data = minio.get_fileobj_in_memory(
+        minio.bucket_name, emotion_detection_item.audio_object_path
+    ).read()
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as af:
+        af.write(data)
+        wav_path = af.name
+    extracted_audio_timestamp = time.time()
+    logger.info(
+        f"[{video_id}]: Audio extracted to {wav_path} in {extracted_audio_timestamp - start_time:.2f} seconds"
+    )
+    try:
+        timestamps = [
+            tuple(seg.timestamp) for seg in emotion_detection_item.emotion_chunks
+        ]
+        logger.info(f"[{video_id}]: Starting to break audio into chunks")
+        started_chunking = time.time()
         chunks = break_audio_into_chunks(wav_path, timestamps)
+        chunking_timestamp = time.time()
+        logger.info(
+            f"[{video_id}]: Audio chunking completed in {chunking_timestamp - started_chunking:.2f} seconds"
+        )
 
         chunk_keys = []
-        for i, c in enumerate(chunks):
-            key = f"audio_chunks/{video_id}/chunk_{i}.wav"
-            with open(c.filename, "rb") as st:
-                minio.upload_fileobj(st, minio.bucket_name, key)
+        for index, c in enumerate(chunks):
+            key = f"audio_chunks/{video_id}/chunk_{index}.wav"
+            with open(c.filename, "rb") as cf:
+                minio.upload_fileobj(cf, minio.bucket_name, key)
+            logger.info(f"[{video_id}]: Uploaded chunk {index} to {key}")
             chunk_keys.append(key)
             os.remove(c.filename)
 
-        updated_emotions = []
-        for idx, e in enumerate(chunks):
-            d = e.model_dump()
-            d["audio_chunk"] = chunk_keys[idx] if idx < len(chunk_keys) else None
-            updated_emotions.append(d)
+        updated = []
+        for index, seg in enumerate(emotion_detection_item.emotion_chunks):
+            data = seg.model_dump()
+            data["audio_chunk_file_path"] = chunk_keys[index]
+            updated.append(data)
 
-        current_emotions = emotion_detection_item.emotion_chunks
-        updated_emotions: list[TranscriptionChunk] = []
-        for idx, e in enumerate(current_emotions):
-            updated_emotions.append(
-                TranscriptionChunk(
-                    text=e.text,
-                    timestamp=e.timestamp,
-                    audio_chunk_file_path=(
-                        chunk_keys[idx] if idx < len(chunk_keys) else None
-                    ),
-                    emotion=e.emotion,
-                    emotion_score=e.emotion_score,
-                )
-            )
-        logger.info(f"Updated emotions: {updated_emotions} for video ID: {video_id}")
-        emotion_detection_item.emotion_chunks = updated_emotions
-        record_to_update = emotion_detection_item.as_document()
         emotion_detection_collection.update_one(
             {"_id": video_id},
-            {"$set": record_to_update},
+            {"$set": {"emotion_chunks": updated}},
         )
-
-        job.meta["step"] = "done"
+        job.meta.update(chunks=len(updated), step="audio_chunked")
         job.save_meta()
-
     finally:
-        for f in (vid_path, wav_path):
-            try:
-                os.remove(f)
-            except OSError:
-                pass
-    return
+        try:
+            os.remove(wav_path)
+        except OSError:
+            pass
+    logger.info(f"[{video_id}]: Temporary file {wav_path} cleaned up")
+
+
+def pipeline_task(video_id: str) -> None:
+    """
+    Enqueue the three sub-tasks in order, and store their IDs
+    in this orchestrator job’s meta for easy tracking.
+    """
+    job = get_current_job()
+    logger.info(f"[{video_id}] ▶️ Starting pipeline_task (orchestrator)")
+    j1 = queue.enqueue(extract_audio_task, video_id)
+    j2 = queue.enqueue(analyze_audio_task, video_id, depends_on=j1)
+    j3 = queue.enqueue(chunk_audio_task, video_id, depends_on=j2)
+
+    job.meta["child_job_ids"] = [j1.id, j2.id, j3.id]
+    job.meta["step"] = "subtasks_enqueued"
+    job.save_meta()
+    logger.info(
+        f"[{video_id}] ✅ pipeline_task enqueued subtasks: {j1.id} → {j2.id} → {j3.id}"
+    )
+
+
+def trigger_video_processing(video_id: str) -> str:
+    """
+    Starts the full pipeline and returns *one* job ID (the orchestrator).
+    """
+    orchestrator = queue.enqueue(pipeline_task, video_id)
+    logger.info(f"[{video_id}] 🎬 Pipeline orchestrator enqueued: {orchestrator.id}")
+    return orchestrator.id
