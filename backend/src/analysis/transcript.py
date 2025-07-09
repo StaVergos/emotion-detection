@@ -1,6 +1,7 @@
 import torch
 import time
 from transformers import pipeline
+from src.api.schemas import TranscriptionResult
 from src.api.constants import TRANSCRIPT_MODEL
 from src.api.config import get_logger
 
@@ -22,7 +23,7 @@ elapsed_time = time.time() - init_start
 logger.info(f"ASR model loaded in {elapsed_time:.2f} seconds")
 
 
-def get_transcript(audio_file_path: str) -> dict:
+def get_transcript(audio_file_path: str) -> list[TranscriptionResult]:
     """
     Run ASR on the given audio file and return the transcript text.
 
@@ -45,4 +46,6 @@ def get_transcript(audio_file_path: str) -> dict:
     if "text" not in result:
         logger.error("No text found in transcription result")
         raise ValueError("No text found in transcription result")
-    return result
+    transcription_result = TranscriptionResult.model_validate(result)
+    logger.info(f"Transcription result: {result}")
+    return transcription_result
