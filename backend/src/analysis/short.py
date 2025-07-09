@@ -1,5 +1,6 @@
 from transformers import pipeline
 import time
+from src.api.schemas import TranscriptionChunk, TranscriptionResult
 from src.api.config import get_logger, DEVICE
 
 logger = get_logger()
@@ -14,9 +15,9 @@ emotion_pipe = pipeline(
 logger.info(f"Emotion detection model loaded in {time.time() - init_start:.2f} seconds")
 
 
-def emotional_detection(transcript: dict) -> str:
+def emotional_detection(transcript: TranscriptionResult) -> str:
     start_time = time.time()
-    text = transcript.get("text", transcript)
+    text = transcript.text
     prompt = (
         "Given the following transcript, identify the speaker's emotion:\n"
         f"{text}\nEmotion:"
@@ -29,13 +30,15 @@ def emotional_detection(transcript: dict) -> str:
     return result[0]["label"]
 
 
-def emotional_detection_for_each_timestamp(transcript: dict) -> list:
+def emotional_detection_for_each_timestamp(
+    transcript: TranscriptionResult,
+) -> list[TranscriptionChunk]:
     """
     Process each timestamp in the transcript and return a list of emotions.
     """
     start_time = time.time()
     emotions = []
-    chunks = transcript.get("chunks", [])
+    chunks = transcript.chunks
     if not chunks:
         logger.warning("No chunks found in transcript, returning empty emotions list")
         raise ValueError("No chunks found in transcript")
@@ -43,8 +46,8 @@ def emotional_detection_for_each_timestamp(transcript: dict) -> list:
         i = 0
         for segment in chunks:
             time_start = time.time()
-            text = segment.get("text", "")
-            timestamp = segment.get("timestamp", "")
+            text = segment.text
+            timestamp = segment.timestamp
             if text:
                 prompt = (
                     "Given the following transcript, identify the speaker's emotion:\n"
@@ -75,8 +78,8 @@ def emotional_detection_for_each_timestamp(transcript: dict) -> list:
     print(
         f"Emotion detection for each timestamp completed in {end_time - start_time:.2f} seconds"
     )
-    transcript_chunks = transcript.get("chunks", [])
+    transcript_chunks = transcript.chunks
     for i, segment in enumerate(transcript_chunks):
-        segment["emotion"] = emotions[i]["emotions"][0]["label"]
-        segment["emotion_score"] = emotions[i]["emotions"][0]["score"]
+        segment.emotion = emotions[i]["emotions"][0]["label"]
+        segment.emotion_score = emotions[i]["emotions"][0]["score"]
     return transcript_chunks
