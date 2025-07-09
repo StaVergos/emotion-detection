@@ -1,10 +1,18 @@
-from enum import StrEnum
-from typing import Annotated, Any, List
-from pydantic import BaseModel, Field, BeforeValidator
-from pydantic import ConfigDict
 from datetime import datetime, timezone
+from enum import StrEnum
+from typing import Annotated, Optional
+
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 PyObjectId = Annotated[str, BeforeValidator(str)]
+
+
+class BaseSchema(BaseModel):
+    """
+    Base schema: serialize enums by their values.
+    """
+
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class EmotionType(StrEnum):
@@ -24,159 +32,145 @@ class TranscriptProcessStatus(StrEnum):
     COMPLETED = "completed"
 
 
-class Error(BaseModel):
-    code: int = Field(description="HTTP status code for the error")
-    message: str = Field(description="Error message describing the issue")
+class Error(BaseSchema):
+    code: int = Field(..., description="HTTP status code for the error")
+    message: str = Field(..., description="Error message describing the issue")
     source: str | None = Field(
         default=None,
         description="Optional source of the error, e.g., field name or operation",
     )
 
 
-class VideoError(BaseModel):
-    errors: List[Error] = Field(
+class VideoError(BaseSchema):
+    errors: list[Error] = Field(
         default_factory=list,
         description="List of errors encountered during video processing",
     )
 
 
-class Emotion(BaseModel):
+class TranscriptionChunk(BaseSchema):
     timestamp: tuple[float, float] = Field(
-        description="Start and end timestamps of the emotion segment"
+        ..., description="Start and end timestamps of the audio chunk in seconds"
     )
-    text: str = Field(description="Transcript text for this segment")
-    emotion: EmotionType = Field(description="Detected emotion label")
-    emotion_score: float = Field(description="Confidence score of the detected emotion")
+    text: str = Field(..., description="Transcription text for this audio chunk")
+    emotion: Optional[EmotionType] = Field(
+        None, description="Detected emotion label for this chunk, if applicable"
+    )
+    emotion_score: Optional[float] = Field(
+        None, description="Confidence score of the detected emotion, if applicable"
+    )
+    audio_chunk_file_path: str | None = Field(
+        default=None,
+        description="MinIO key where the audio chunk is stored, if applicable",
+    )
 
     model_config = ConfigDict(
-        use_enum_values=True,
+        json_schema_extra={
+            "example": {
+                "timestamp": (0.0, 5.0),
+                "text": "This is an example transcription.",
+                "emotion": "joy",
+                "emotion_score": 0.95,
+            }
+        },
+    )
+
+
+class TranscriptionResult(BaseSchema):
+    text: str = Field(..., description="Transcription text of the audio")
+    chunks: list[TranscriptionChunk] = Field(
+        default_factory=list,
+        description="List of audio chunks with timestamps and text",
+    )
+
+
+class EmotionSegment(BaseSchema):
+    timestamp: tuple[float, float] = Field(
+        ..., description="Start and end timestamps of the emotion segment"
+    )
+    text: str = Field(..., description="Transcript text for this segment")
+    emotion: EmotionType = Field(..., description="Detected emotion label")
+    emotion_score: float = Field(
+        ..., description="Confidence score of the detected emotion"
+    )
+    audio_chunk_file_path: str | None = Field(
+        default=None,
+        description="MinIO key where the audio chunk is stored, if applicable",
+    )
+
+    model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "timestamp": (34.36, 37.8),
                 "text": "And you can do that on your own if you want.",
                 "emotion": "neutral",
-                "emotion_score": 0.9420299530029297,
+                "emotion_score": 0.94203,
             }
         },
     )
 
 
-class VideoMetadata(BaseModel):
+class AudioChunk(BaseSchema):
+    filename: str = Field(..., description="Temporary file path of the audio chunk")
+    start: float = Field(..., description="Start time of the audio chunk in seconds")
+    end: float = Field(..., description="End time of the audio chunk in seconds")
+
+
+class EmotionDetectionItem(BaseSchema):
+    model_config = ConfigDict(
+        serialize_by_alias=True,
+    )
     id: PyObjectId = Field(alias="_id", description="MongoDB document ID as string")
     video_filename: str = Field(description="Original uploaded video filename")
-    video_object: str = Field(description="MinIO key where the video is stored")
+    video_object_path: str = Field(description="MinIO key where the video is stored")
     created_at: datetime = Field(
-        default_factory=datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(timezone.utc),
         description="UTC timestamp when this record was created",
     )
     transcript_process_status: TranscriptProcessStatus | None = Field(
-        default=None,
-        description="Current status of the video processing (e.g., 'uploaded', 'processing', 'completed')",
+        None,
+        description="Current status of the video processing",
     )
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "_id": "b2a3c489ca3249a3a46e8358e483f611",
-                "video_filename": "my_video.mp4",
-                "video_object": "videos/b2a3c489ca3249a3a46e8358e483f611/my_video.mp4",
-                "created_at": "2025-06-29T08:49:03.081781+00:00",
-            }
-        },
+    audio_object_path: str | None = Field(
+        None, description="MinIO key where the extracted audio is stored"
     )
-
-
-class EmotionDetection(VideoMetadata):
-    audio_object: str | None = Field(
-        description="MinIO key where the extracted audio is stored",
-        default=None,
+    transcription_result: str | None = Field(
+        default=None, description="Full ASR transcript of the video audio"
     )
-    transcript: str | None = Field(
-        description="Full ASR transcript of the video audio", default=None
-    )
-    emotions: List[Emotion] | None = Field(
+    emotion_chunks: list[EmotionSegment] | None = Field(
+        default_factory=list,
         description="List of detected emotions with timestamps",
-        default=[],
-    )
-    emotion_prompt_result: str | None = Field(
-        default=None,
-        description="Result of the emotion detection prompt, if applicable",
     )
 
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "video_filename": "example_video.mp4",
-                "video_object": "videos/605c5a2e2e3a3f4b5c6d7e8f/example_video.mp4",
-                "audio_object": "audio/605c5a2e2e3a3f4b5c6d7e8f.wav",
-                "transcript": "This is an example transcript of the video.",
-                "emotions": [
-                    {
-                        "timestamp": (34.36, 37.8),
-                        "text": "And you can do that on your own if you want.",
-                        "emotion": "neutral",
-                        "emotion_score": 0.9420299530029297,
-                    }
-                ],
-                "created_at": "2025-06-29T02:18:05Z",
-                "transcript_process_status": "completed",
-                "emotion_prompt_result": "The detected emotion is neutral.",
-            }
+    def as_document(self):
+        """
+        Convert the EmotionDetectionItem to a dictionary suitable for MongoDB storage.
+        """
+        emotion_chunks_data = []
+        if self.emotion_chunks:
+            for chunk in self.emotion_chunks:
+                emotion_chunks_data.append(chunk.model_dump())
+        return {
+            "_id": self.id,
+            "video_filename": self.video_filename,
+            "video_object_path": self.video_object_path,
+            "created_at": self.created_at,
+            "transcript_process_status": self.transcript_process_status,
+            "audio_object_path": self.audio_object_path,
+            "transcription_result": self.transcription_result,
+            "emotion_chunks": emotion_chunks_data,
         }
-    )
 
 
-class VideoListItem(EmotionDetection):
-    id: PyObjectId = Field(alias="_id", description="MongoDB document ID as string")
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class UploadeVideoResponse(VideoListItem):
+class UploadedVideoResponse(EmotionDetectionItem):
     extract_job_id: str = Field(
         description="Unique identifier for the video processing job",
         example="1234567890abcdef",
     )
 
 
-class JobStatus(BaseModel):
-    job_id: str
-    status: str
-    meta: dict[str, Any] = Field(default_factory=dict)
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "job_id": "1234567890abcdef",
-                "status": "completed",
-                "meta": {
-                    "step": "processing",
-                    "progress": 100,
-                    "result": {"emotion": "joy", "score": 0.95},
-                },
-            }
-        },
-    )
+class VideosResponse(BaseSchema):
+    videos: list[EmotionDetectionItem] = Field(..., description="Video items list")
+    total: int = Field(..., description="Total number of videos in the collection")
 
-
-class VideosResponse(BaseModel):
-    videos: List[VideoListItem] = Field(
-        description="List of video metadata with emotion detection results"
-    )
-    total: int = Field(description="Total number of videos in the collection")
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "videos": [
-                    {
-                        "_id": "605c5a2e2e3a3f4b5c6d7e8f",
-                        "video_filename": "example_video.mp4",
-                        "video_object": "videos/605c5a2e2e3a3f4b5c6d7e8f/example_video.mp4",
-                        "audio_object": "audio/605c5a2e2e3a3f4b5c6d7e8f.wav",
-                        "transcript": "This is an example transcript of the video.",
-                        "emotions": [],
-                        "created_at": "2025-06-29T02:18:05Z",
-                        "transcript_process_status": "completed",
-                    }
-                ],
-                "total": 1,
-            }
-        },
-    )
+    model_config = ConfigDict(json_schema_extra={"example": {"total": 1}})
