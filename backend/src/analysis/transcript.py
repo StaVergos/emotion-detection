@@ -23,7 +23,7 @@ elapsed_time = time.time() - init_start
 logger.info(f"ASR model loaded in {elapsed_time:.2f} seconds")
 
 
-def get_transcript(audio_file_path: str) -> list[TranscriptionResult]:
+def get_transcript(audio_file_path: str) -> TranscriptionResult:
     """
     Run ASR on the given audio file and return the transcript text.
 
