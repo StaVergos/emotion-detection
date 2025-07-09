@@ -1,4 +1,3 @@
-# backend/main.py
 import asyncio
 import os
 import shutil
@@ -28,14 +27,14 @@ from src.minio import MinioClient
 from src.mongodb import emotion_detection_collection, check_record_exists
 from src.api.schemas import (
     Error,
-    UploadeVideoResponse,
-    VideoListItem,
+    EmotionDetectionItem,
     VideosResponse,
     VideoError,
+    TranscriptProcessStatus,
+    UploadedVideoResponse,
 )
-from src.analysis.audio_emotion import get_emotion_scores_from_file
+from src.tasks import trigger_video_processing  # <-- new unified task
 from src.api.exceptions import APIError
-from src.tasks import extract_audio_task, transcribe_task
 
 logger = get_logger()
 minio = MinioClient()
@@ -71,7 +70,7 @@ def list_videos():
     return {"videos": items, "total": len(items)}
 
 
-@app.get("/videos/{video_id}", response_model=VideoListItem)
+@app.get("/videos/{video_id}", response_model=EmotionDetectionItem)
 def get_video(video_id: str):
     item = emotion_detection_collection.find_one({"_id": video_id})
     if not item:
@@ -82,8 +81,11 @@ def get_video(video_id: str):
 @app.post(
     "/videos",
     status_code=status.HTTP_201_CREATED,
-    response_model=UploadeVideoResponse,
-    responses={400: {"model": VideoError}, 409: {"model": VideoError}},
+    responses={
+        201: {"model": UploadedVideoResponse},
+        400: {"model": VideoError},
+        409: {"model": VideoError},
+    },
 )
 def upload_video(file: UploadFile):
     if not file.filename.lower().endswith(".mp4"):
@@ -117,6 +119,7 @@ def upload_video(file: UploadFile):
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
         shutil.copyfileobj(file.file, tmp)
         tmp_path = tmp.name
+
     try:
         with open(tmp_path, "rb") as stream:
             minio.upload_fileobj(stream, minio.bucket_name, video_key)
@@ -124,90 +127,45 @@ def upload_video(file: UploadFile):
         os.remove(tmp_path)
 
     created_at = datetime.now(timezone.utc)
-    doc = {
-        "_id": upload_id,
-        "video_filename": orig_name,
-        "video_object": video_key,
-        "created_at": created_at,
-        "transcript_process_status": None,
-    }
-    emotion_detection_collection.insert_one(doc)
-
-    extract_job = queue.enqueue(
-        extract_audio_task,
-        upload_id,
-        job_id=f"{upload_id}-extract",
-        ttl=3600,
+    emotion_detection_item = EmotionDetectionItem(
+        _id=upload_id,
+        video_filename=orig_name,
+        video_object_path=video_key,
+        created_at=created_at,
+        transcript_process_status=TranscriptProcessStatus.UPLOADING.value,
     )
+    emotion_detection_collection.insert_one(emotion_detection_item.model_dump())
 
-    return {**doc, "extract_job_id": extract_job.id}
+    job_id = trigger_video_processing(upload_id)
+
+    return {**emotion_detection_item.model_dump(), "extract_job_id": job_id}
 
 
 @app.delete("/videos/{video_id}", status_code=204)
 def delete_video(video_id: str):
     record = emotion_detection_collection.find_one({"_id": video_id})
-    if not record:
+    emotion_detection_item = EmotionDetectionItem.model_validate(record)
+    if not emotion_detection_item:
         raise HTTPException(404, "Video not found.")
 
-    video_key = record["video_object"]
-    audio_key = record.get("audio_object")
-
-    minio.s3.delete_object(Bucket=minio.bucket_name, Key=video_key)
-    if audio_key:
-        minio.s3.delete_object(Bucket=minio.bucket_name, Key=audio_key)
+    keys = (
+        [emotion_detection_item.video_object_path]
+        + (
+            [emotion_detection_item.audio_object_path]
+            if emotion_detection_item.audio_object_path
+            else []
+        )
+        + [
+            chunk["audio_chunk"]
+            for chunk in emotion_detection_item.emotion_chunks
+            if "audio_chunk" in chunk
+        ]
+    )
+    for key in filter(None, keys):
+        minio.s3.delete_object(Bucket=minio.bucket_name, Key=key)
 
     emotion_detection_collection.delete_one({"_id": video_id})
     return {"message": "Video deleted successfully."}
-
-
-@app.post("/videos/{video_id}/transcript")
-def transcript_video(video_id: str):
-    record = emotion_detection_collection.find_one({"_id": video_id})
-    if not record:
-        raise HTTPException(404, "Video not found.")
-    record_key = record.get("audio_object", None)
-    if not record_key:
-        raise HTTPException(404, "Audio object not found. Please extract audio first.")
-
-    job = queue.enqueue(transcribe_task, video_id, record_key, job_id=video_id)
-    return {"job_id": job.id}
-
-
-@app.post("/videos/{id}/analyze")
-def analyze(id: str):
-    record = emotion_detection_collection.find_one({"_id": id})
-    if not record:
-        raise HTTPException(404, "Video not found.")
-    transcript = record.get("transcript")
-    if not transcript:
-        raise HTTPException(400, "Transcript not found for this video.")
-    return {"job_id": "job.id"}
-
-
-@app.get("/videos/{video_id}/audio_emotion")
-def get_audio_emotion(video_id: str):
-    record = emotion_detection_collection.find_one({"_id": video_id})
-    if not record:
-        raise HTTPException(404, "Video not found.")
-    audio_key = record.get("audio_object")
-    if not audio_key:
-        raise HTTPException(404, "Audio object not found. Please extract audio first.")
-
-    # write bytes out to a real temp .wav so soundfile can open it
-    in_mem = minio.get_fileobj_in_memory(minio.bucket_name, audio_key)
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-        tmp.write(in_mem.read())
-        tmp_path = tmp.name
-    try:
-        emotion_scores = get_emotion_scores_from_file(tmp_path)
-    finally:
-        os.remove(tmp_path)
-
-    return {
-        "video_id": video_id,
-        "emotion_scores": emotion_scores,
-        "audio_object": audio_key,
-    }
 
 
 @app.websocket("/ws/status/{job_id}")
@@ -222,14 +180,15 @@ async def ws_job_status(websocket: WebSocket, job_id: str):
 
     try:
         while True:
-            status = job.get_status()
+            status_ = job.get_status()
             meta = job.meta or {}
             await websocket.send_json(
-                {"job_id": job_id, "status": status, "meta": meta}
+                {"job_id": job_id, "status": status_, "meta": meta}
             )
-            if status in ("finished", "failed"):
+            if status_ in ("finished", "failed"):
                 break
             await asyncio.sleep(1)
     except WebSocketDisconnect:
-        return
-    await websocket.close()
+        pass
+    finally:
+        await websocket.close()
