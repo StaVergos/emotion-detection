@@ -11,7 +11,7 @@ from src.file_processing import break_audio_into_chunks, extract_audio_from_vide
 from src.analysis.transcript import get_transcript
 from src.analysis.short import emotional_detection_for_each_timestamp
 from src.api.schemas import (
-    TranscriptProcessStatus,
+    ProcessingStatus,
     EmotionDetectionItem,
     TranscriptionResult,
 )
@@ -57,7 +57,7 @@ def extract_audio_task(video_id: str) -> None:
             {
                 "$set": {
                     "audio_object_path": audio_key,
-                    "transcript_process_status": TranscriptProcessStatus.UPLOADED.value,
+                    "processing_status": ProcessingStatus.AUDIO_EXTRACTED.value,
                 }
             },
         )
@@ -122,6 +122,9 @@ def analyze_audio_task(video_id: str) -> None:
         )
         emotion_detection_item.transcription_result = transcription_result.text
         emotion_detection_item.emotion_chunks = emotion_chunks
+        emotion_detection_item.processing_status = (
+            ProcessingStatus.TRANSCRIPTION_EMOTION_COMPLETED.value
+        )
         document_to_update = emotion_detection_item.as_document()
         emotion_detection_collection.update_one(
             {"_id": video_id},
@@ -203,7 +206,12 @@ def chunk_audio_task(video_id: str) -> None:
 
         emotion_detection_collection.update_one(
             {"_id": video_id},
-            {"$set": {"emotion_chunks": updated}},
+            {
+                "$set": {
+                    "emotion_chunks": updated,
+                    "processing_status": ProcessingStatus.AUDIO_CHUNKS_UPLOADED.value,
+                }
+            },
         )
         job.meta.update(chunks=len(updated), step="audio_chunked")
         job.save_meta()

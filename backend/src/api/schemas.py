@@ -25,11 +25,13 @@ class EmotionType(StrEnum):
     DISGUST = "disgust"
 
 
-class TranscriptProcessStatus(StrEnum):
-    UPLOADING = "uploading"
-    UPLOADED = "uploaded"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
+class ProcessingStatus(StrEnum):
+    VIDEO_UPLOADED = "video_uploaded"
+    AUDIO_EXTRACTED = "audio_extracted"
+    TRANSCRIPTION_COMPLETED = "transcription_completed"
+    TRANSCRIPTION_EMOTION_COMPLETED = "transcription_emotion_completed"
+    AUDIO_CHUNKS_UPLOADED = "audio_chunks_uploaded"
+    AUDIO_CHUNKS_EMOTION_COMPLETED = "audio_chunks_emotion_completed"
 
 
 class Error(BaseSchema):
@@ -127,7 +129,7 @@ class EmotionDetectionItem(BaseSchema):
         default_factory=lambda: datetime.now(timezone.utc),
         description="UTC timestamp when this record was created",
     )
-    transcript_process_status: TranscriptProcessStatus | None = Field(
+    processing_status: ProcessingStatus | None = Field(
         None,
         description="Current status of the video processing",
     )
@@ -155,7 +157,7 @@ class EmotionDetectionItem(BaseSchema):
             "video_filename": self.video_filename,
             "video_object_path": self.video_object_path,
             "created_at": self.created_at,
-            "transcript_process_status": self.transcript_process_status,
+            "processing_status": self.processing_status,
             "audio_object_path": self.audio_object_path,
             "transcription_result": self.transcription_result,
             "emotion_chunks": emotion_chunks_data,

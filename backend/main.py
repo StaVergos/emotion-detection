@@ -30,7 +30,7 @@ from src.api.schemas import (
     EmotionDetectionItem,
     VideosResponse,
     VideoError,
-    TranscriptProcessStatus,
+    ProcessingStatus,
     UploadedVideoResponse,
 )
 from src.tasks import trigger_video_processing  # <-- new unified task
@@ -132,7 +132,7 @@ def upload_video(file: UploadFile):
         video_filename=orig_name,
         video_object_path=video_key,
         created_at=created_at,
-        transcript_process_status=TranscriptProcessStatus.UPLOADING.value,
+        processing_status=ProcessingStatus.VIDEO_UPLOADED.value,
     )
     emotion_detection_collection.insert_one(emotion_detection_item.model_dump())
 
@@ -172,22 +172,27 @@ def delete_video(video_id: str):
 async def ws_job_status(websocket: WebSocket, job_id: str):
     await websocket.accept()
     try:
-        job = Job.fetch(job_id, connection=redis)
-    except NoSuchJobError:
-        await websocket.send_json({"error": "Job not found"})
-        await websocket.close()
-        return
+        try:
+            Job.fetch(job_id, connection=redis)
+        except NoSuchJobError:
+            await websocket.send_json({"error": "Job not found"})
+            await websocket.close()
+            return
 
-    try:
         while True:
+            job = Job.fetch(job_id, connection=redis)
             status_ = job.get_status()
             meta = job.meta or {}
+
             await websocket.send_json(
                 {"job_id": job_id, "status": status_, "meta": meta}
             )
+
             if status_ in ("finished", "failed"):
                 break
+
             await asyncio.sleep(1)
+
     except WebSocketDisconnect:
         pass
     finally:
