@@ -1,143 +1,142 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { AddVideo } from "./components/videos/addVideo";
-import VideoTablePage from "./components/videos/page";
-import type { VideoItem } from "./types";
+import { useState, useEffect, useCallback, useRef } from "react"
+import { AddVideo } from "./components/videos/addVideo"
+import VideoTablePage from "./components/videos/page"
+import type { VideoItem, ProcessingStatus } from "./types"
 
 function App() {
-  const [videos, setVideos] = useState<VideoItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [errorMessage, setError] = useState<string | null>(null);
+  const [videos, setVideos] = useState<VideoItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [errorMessage, setError] = useState<string | null>(null)
 
-  const [processingStatus, setProcessingStatus] = useState<Record<string, string>>({});
-  const wsRefs = useRef<Record<string, WebSocket>>({});
+  const [processingStatus, setProcessingStatus] = useState<
+    Record<string, ProcessingStatus>
+  >({})
+  const wsRefs = useRef<Record<string, WebSocket>>({})
 
   const fetchVideos = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    setLoading(true)
+    setError(null)
     try {
-      const res = await fetch("http://localhost:8000/videos");
-      const json = await res.json();
+      const res = await fetch("http://localhost:8000/videos")
+
+      // empty list is fine
+      if (res.status === 404) {
+        setVideos([])
+        return
+      }
+
+      const json = await res.json()
       if (!res.ok) {
         const detail =
           typeof json === "object" && "detail" in json
             ? (json.detail as string)
-            : `Error ${res.status}`;
-        throw new Error(detail);
+            : `Error ${res.status}`
+        throw new Error(detail)
       }
+
       const normalized: VideoItem[] = json.videos.map((raw: any) => ({
         _id: raw._id,
         id: raw._id.slice(-5),
-        audio_object: raw.audio_object,
+        audio_object: raw.audio_object_path,
         created_at: new Date(raw.created_at)
           .toISOString()
           .replace("T", " ")
           .split(".")[0],
         emotion_prompt_result: raw.emotion_prompt_result,
-        emotions: raw.emotions,
-        transcript: raw.transcript,
-        transcript_process_status: raw.transcript_process_status,
+        emotions: raw.emotion_chunks,
+        transcript: raw.transcription_result,
+        processing_status: raw.processing_status,
         video_filename: raw.video_filename,
-        video_object: raw.video_object,
-        extract_job_id: raw.extract_job_id,
-      }));
-      setVideos(normalized);
+        video_object: raw.video_object_path,
+      }))
+      setVideos(normalized)
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, []);
+  }, [])
 
   useEffect(() => {
-    fetchVideos();
-  }, [fetchVideos]);
+    fetchVideos()
+  }, [fetchVideos])
 
   const listenToJob = useCallback(
-    (videoId: string, jobId: string, initialLabel: string) => {
-      setProcessingStatus((ps) => ({ ...ps, [videoId]: initialLabel }));
-      const ws = new WebSocket(`ws://localhost:8000/ws/status/${jobId}`);
-      wsRefs.current[jobId] = ws;
+    (videoId: string, initialStatus: ProcessingStatus) => {
+      setProcessingStatus((ps) => ({ ...ps, [videoId]: initialStatus }))
+      const ws = new WebSocket(`ws://localhost:8000/ws/status/${videoId}`)
+      wsRefs.current[videoId] = ws
 
       ws.onmessage = (evt) => {
-        const msg = JSON.parse(evt.data) as { status: string; meta: any };
+        const msg = JSON.parse(evt.data) as { step: ProcessingStatus;[k: string]: any }
+        setProcessingStatus((ps) => ({
+          ...ps,
+          [videoId]: msg.step,
+        }))
 
-        setProcessingStatus((ps) => ({ ...ps, [videoId]: initialLabel }));
-
-        if (msg.status === "finished" || msg.status === "failed") {
-          ws.close();
+        if (msg.step === "audio_chunked") {
+          ws.close()
           setProcessingStatus((ps) => {
-            const nxt = { ...ps };
-            delete nxt[videoId];
-            return nxt;
-          });
-          fetchVideos();
+            const next = { ...ps }
+            delete next[videoId]
+            return next
+          })
+          fetchVideos()
         }
-      };
+      }
 
       ws.onerror = () => {
-        ws.close();
+        ws.close()
         setProcessingStatus((ps) => {
-          const nxt = { ...ps };
-          delete nxt[videoId];
-          return nxt;
-        });
-      };
+          const next = { ...ps }
+          delete next[videoId]
+          return next
+        })
+      }
     },
     [fetchVideos]
-  );
+  )
 
   const handleUploadSuccess = useCallback(
-    (videoId: string, extractJobId: string) => {
-      listenToJob(videoId, extractJobId, "uploading");
-      fetchVideos();
+    (videoId: string) => {
+      // start listening to the video_id channel
+      listenToJob(videoId, "video_uploaded")
+      fetchVideos()
     },
     [listenToJob, fetchVideos]
-  );
-
-  const handleTranscribe = useCallback(
-    async (videoId: string) => {
-      const res = await fetch(
-        `http://localhost:8000/videos/${videoId}/transcript`,
-        { method: "POST" }
-      );
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.detail ?? `Error ${res.status}`);
-      listenToJob(videoId, body.job_id, "transcribing");
-    },
-    [listenToJob]
-  );
+  )
 
   const handleDelete = useCallback(
     async (rawId: string) => {
       try {
         const res = await fetch(`http://localhost:8000/videos/${rawId}`, {
           method: "DELETE",
-        });
+        })
         if (res.status === 204) {
-          await fetchVideos();
+          await fetchVideos()
         } else {
-          const json = await res.json().catch(() => ({}));
-          throw new Error(json.detail ?? `Delete failed (${res.status})`);
+          const json = await res.json().catch(() => ({}))
+          throw new Error(json.detail ?? `Delete failed (${res.status})`)
         }
       } catch (err: any) {
-        alert(`Could not delete video: ${err.message}`);
+        alert(`Could not delete video: ${err.message}`)
       }
     },
     [fetchVideos]
-  );
+  )
 
   useEffect(() => {
     return () => {
-      Object.values(wsRefs.current).forEach((ws) => ws.close());
-    };
-  }, []);
+      Object.values(wsRefs.current).forEach((ws) => ws.close())
+    }
+  }, [])
 
   return (
     <div className="flex items-center justify-center h-full">
       <div className="bg-white p-6 rounded-lg shadow-lg max-w-xl w-full text-center space-y-6">
         <h1 className="text-2xl font-bold">Emotion Detection</h1>
 
-        <AddVideo onUploadSuccess={(vidId, jobId) => handleUploadSuccess(vidId, jobId)} />
+        <AddVideo onUploadSuccess={handleUploadSuccess} />
 
         <VideoTablePage
           loading={loading}
@@ -145,11 +144,10 @@ function App() {
           data={videos}
           processingStatus={processingStatus}
           onDelete={handleDelete}
-          onProcess={handleTranscribe}
         />
       </div>
     </div>
-  );
+  )
 }
 
-export default App;
+export default App

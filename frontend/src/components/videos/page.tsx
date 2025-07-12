@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useEffect } from "react";
-import { DataTable } from "./data-table";
+import { DataTable } from "./dataTable";
 import { getVideoColumns } from "./columns";
 import type { VideoItem } from "../../types";
 
@@ -11,7 +11,6 @@ interface VideoTablePageProps {
     data: VideoItem[];
     processingStatus: Record<string, string>;
     onDelete: (rawId: string) => void;
-    onProcess: (rawId: string) => void;
 }
 
 export default function VideoTablePage({
@@ -20,9 +19,7 @@ export default function VideoTablePage({
     data,
     processingStatus,
     onDelete,
-    onProcess,
 }: VideoTablePageProps) {
-    // keep a ref to avoid stale closures
     const statusRef = useRef(processingStatus);
     useEffect(() => {
         statusRef.current = processingStatus;
@@ -34,12 +31,14 @@ export default function VideoTablePage({
     );
 
     const columns = useMemo(
-        () => getVideoColumns(onDelete, onProcess, statusRef),
-        [onDelete, onProcess, processingKeyString]
+        () => getVideoColumns(onDelete, statusRef),
+        [onDelete, processingKeyString]
     );
 
-    if (loading) return <div className="text-center py-20">Loading…</div>;
-    if (error) return <div className="text-red-600 text-center py-20">{error}</div>;
+    if (loading)
+        return <div className="text-center py-20">Loading…</div>;
+    if (error)
+        return <div className="text-red-600 text-center py-20">{error}</div>;
 
     return (
         <div className="container mx-auto py-10 w-full">

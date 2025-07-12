@@ -1,66 +1,67 @@
-import { useState, useRef, type FormEvent } from "react";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import type { VideoItem } from "@/types";
+import { useState, useRef, type FormEvent } from "react"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Button } from "@/components/ui/button"
+import type { VideoItem } from "@/types"
 
 interface AddVideoProps {
-    onUploadSuccess: (videoId: string, extractJobId: string) => void;
+    onUploadSuccess: (videoId: string) => void
 }
 
 export function AddVideo({ onUploadSuccess }: AddVideoProps) {
-    const [file, setFile] = useState<File | null>(null);
-    const [status, setStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
-    const [errorMsg, setErrorMsg] = useState<string>("");
-    const inputRef = useRef<HTMLInputElement>(null);
+    const [file, setFile] = useState<File | null>(null)
+    const [status, setStatus] = useState<"idle" | "uploading" | "success" | "error">(
+        "idle"
+    )
+    const [errorMsg, setErrorMsg] = useState<string>("")
+    const inputRef = useRef<HTMLInputElement>(null)
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setFile(e.target.files?.[0] ?? null);
-        setStatus("idle");
-        setErrorMsg("");
-    };
+        setFile(e.target.files?.[0] ?? null)
+        setStatus("idle")
+        setErrorMsg("")
+    }
 
     const handleSubmit = async (e: FormEvent) => {
-        e.preventDefault();
+        e.preventDefault()
         if (!file) {
-            setErrorMsg("Please select an MP4 file first.");
-            return;
+            setErrorMsg("Please select an MP4 file first.")
+            return
         }
 
-        const formData = new FormData();
-        formData.append("file", file);
+        const formData = new FormData()
+        formData.append("file", file)
 
-        setStatus("uploading");
-        setErrorMsg("");
+        setStatus("uploading")
+        setErrorMsg("")
 
         try {
             const res = await fetch("http://localhost:8000/videos", {
                 method: "POST",
                 body: formData,
-            });
-            const json = await res.json();
+            })
+            const json = await res.json()
 
             if (res.status === 201) {
-                const videoId = (json as VideoItem)._id as string;
-                const extractJobId = (json as VideoItem).extract_job_id as string;
+                const videoId = (json as VideoItem)._id
 
-                setStatus("success");
-                setFile(null);
-                if (inputRef.current) inputRef.current.value = "";
+                setStatus("success")
+                setFile(null)
+                if (inputRef.current) inputRef.current.value = ""
 
-                onUploadSuccess(videoId, extractJobId);
+                onUploadSuccess(videoId)
             } else {
                 const detail =
                     typeof json === "object" && "detail" in json
                         ? (json as any).detail
-                        : `Server responded ${res.status}`;
-                throw new Error(detail);
+                        : `Server responded ${res.status}`
+                throw new Error(detail)
             }
         } catch (err: any) {
-            setErrorMsg(err.message);
-            setStatus("error");
+            setErrorMsg(err.message)
+            setStatus("error")
         }
-    };
+    }
 
     return (
         <form
@@ -79,7 +80,7 @@ export function AddVideo({ onUploadSuccess }: AddVideoProps) {
             </div>
 
             <Button type="submit" disabled={status === "uploading"}>
-                {status === "uploading" ? "uploading…" : "Upload Video"}
+                {status === "uploading" ? "Uploading…" : "Upload Video"}
             </Button>
 
             {status === "success" && (
@@ -89,5 +90,5 @@ export function AddVideo({ onUploadSuccess }: AddVideoProps) {
                 <p className="text-red-600">Upload failed: {errorMsg}</p>
             )}
         </form>
-    );
+    )
 }
