@@ -1,3 +1,4 @@
+// remove extract_job_id entirely
 export type APIError = {
     code: number
     message: string
@@ -11,6 +12,15 @@ export type Emotions = {
     timestamp: [number, number]
 }
 
+export type ProcessingStatus =
+    | "video_uploaded"
+    | "extracting_audio"
+    | "audio_uploaded"
+    | "analyzing_audio"
+    | "emotions_detected"
+    | "chunking_audio"
+    | "audio_chunked"
+
 export type VideoItem = {
     _id: string
     id?: string
@@ -19,15 +29,15 @@ export type VideoItem = {
     emotion_prompt_result: string
     emotions: Emotions[]
     transcript: string
-    transcript_process_status: "uploading" | "uploaded" | "processing" | "completed"
+    processing_status: ProcessingStatus
     video_filename: string
     video_object: string
-    extract_job_id?: string
 }
+
 
 export type VideoColumn = {
     id: string
     video_filename: string
-    transcript_process_status: "uploading" | "uploaded" | "processing" | "completed"
+    processing_status: "uploading" | "uploaded" | "processing" | "completed"
     created_at: string
 }
