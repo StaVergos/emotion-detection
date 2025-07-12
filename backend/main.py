@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import shutil
 import tempfile
@@ -17,10 +18,7 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from rq import Queue
 from redis import Redis
-from rq.job import Job
-from rq.exceptions import NoSuchJobError
 
 from src.api.config import get_logger
 from src.minio import MinioClient
@@ -33,13 +31,12 @@ from src.api.schemas import (
     ProcessingStatus,
     UploadedVideoResponse,
 )
-from src.tasks import trigger_video_processing  # <-- new unified task
+from src.tasks import trigger_video_processing
 from src.api.exceptions import APIError
 
 logger = get_logger()
 minio = MinioClient()
 redis = Redis(host="localhost", port=6379)
-queue = Queue("emotion_detection", connection=redis, default_timeout=3600)
 
 app = FastAPI()
 app.add_middleware(
@@ -127,40 +124,38 @@ def upload_video(file: UploadFile):
         os.remove(tmp_path)
 
     created_at = datetime.now(timezone.utc)
-    emotion_detection_item = EmotionDetectionItem(
+    edi = EmotionDetectionItem(
         _id=upload_id,
         video_filename=orig_name,
         video_object_path=video_key,
         created_at=created_at,
         processing_status=ProcessingStatus.VIDEO_UPLOADED.value,
     )
-    emotion_detection_collection.insert_one(emotion_detection_item.model_dump())
+    emotion_detection_collection.insert_one(edi.model_dump())
 
     job_id = trigger_video_processing(upload_id)
 
-    return {**emotion_detection_item.model_dump(), "extract_job_id": job_id}
+    return {**edi.model_dump(), "extract_job_id": job_id}
 
 
 @app.delete("/videos/{video_id}", status_code=204)
 def delete_video(video_id: str):
     record = emotion_detection_collection.find_one({"_id": video_id})
-    emotion_detection_item = EmotionDetectionItem.model_validate(record)
-    if not emotion_detection_item:
+    edi = EmotionDetectionItem.model_validate(record)
+    if not edi:
         raise HTTPException(404, "Video not found.")
-
-    keys = (
-        [emotion_detection_item.video_object_path]
-        + (
-            [emotion_detection_item.audio_object_path]
-            if emotion_detection_item.audio_object_path
-            else []
-        )
-        + [
-            chunk["audio_chunk"]
-            for chunk in emotion_detection_item.emotion_chunks
-            if "audio_chunk" in chunk
+    emotion_chunks = edi.emotion_chunks
+    if not emotion_chunks:
+        logger.warning(f"[{video_id}] No emotion chunks to delete.")
+    else:
+        keys = [
+            chunk.audio_chunk_file_path
+            for chunk in emotion_chunks
+            if chunk.audio_chunk_file_path
         ]
-    )
+        keys.append(edi.audio_object_path)
+        if not keys:
+            logger.warning(f"[{video_id}] No valid audio chunk filenames to delete.")
     for key in filter(None, keys):
         minio.s3.delete_object(Bucket=minio.bucket_name, Key=key)
 
@@ -168,32 +163,34 @@ def delete_video(video_id: str):
     return {"message": "Video deleted successfully."}
 
 
-@app.websocket("/ws/status/{job_id}")
-async def ws_job_status(websocket: WebSocket, job_id: str):
+@app.websocket("/ws/status/{video_id}")
+async def ws_video_status(websocket: WebSocket, video_id: str):
+    """
+    Subscribe to Redis pub/sub channel for this video_id and
+    forward every JSON‐encoded step to the client.
+    """
     await websocket.accept()
+    pubsub = redis.pubsub()
+    pubsub.subscribe(f"video:{video_id}")
+    logger.info(f"WS open, subscribed to video:{video_id}")
+
     try:
-        try:
-            Job.fetch(job_id, connection=redis)
-        except NoSuchJobError:
-            await websocket.send_json({"error": "Job not found"})
-            await websocket.close()
-            return
-
         while True:
-            job = Job.fetch(job_id, connection=redis)
-            status_ = job.get_status()
-            meta = job.meta or {}
+            msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            if msg and msg["type"] == "message":
+                raw = msg["data"]
+                try:
+                    payload = json.loads(
+                        raw.decode() if isinstance(raw, (bytes, bytearray)) else raw
+                    )
+                except Exception:
+                    payload = {"step": "unknown", "data": raw}
+                await websocket.send_json(payload)
 
-            await websocket.send_json(
-                {"job_id": job_id, "status": status_, "meta": meta}
-            )
-
-            if status_ in ("finished", "failed"):
-                break
-
-            await asyncio.sleep(1)
-
+            await asyncio.sleep(0.1)
     except WebSocketDisconnect:
-        pass
+        logger.info(f"WS disconnected for video:{video_id}")
     finally:
+        pubsub.close()
         await websocket.close()
+        logger.info(f"WS closed for video:{video_id}")
