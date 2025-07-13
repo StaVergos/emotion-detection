@@ -30,27 +30,28 @@ const StageIndicator = React.memo(({ label }: { label: string }) => {
 
 export function getVideoColumns(
     onDelete: (rawId: string) => void,
+    onViewTranscript: (rawId: string) => void,
     processingStatusRef: React.RefObject<Record<string, string>>
 ): ColumnDef<VideoItem>[] {
     return [
         { accessorKey: "id", header: "ID" },
-        { accessorKey: "video_filename", header: "Video File" },
+        { accessorKey: "video_filename", header: "File" },
         {
             id: "status",
             header: "Status",
             cell: ({ row }) => {
                 const vid = row.original
                 const label = processingStatusRef.current?.[vid._id]
-                if (label) return <StageIndicator label={label} />
-                return <span>{vid.processing_status}</span>
+                return label ? <StageIndicator label={label} /> : <span>{vid.processing_status}</span>
             },
         },
-        { accessorKey: "created_at", header: "Created At" },
+        { accessorKey: "created_at", header: "Created" },
         {
             id: "actions",
-            header: "Actions",
+            header: "⋮",
             cell: ({ row }) => {
-                const video = row.original
+                const v = row.original
+                const canView = !!v.transcript
                 return (
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -61,15 +62,15 @@ export function getVideoColumns(
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                             <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                            <DropdownMenuItem
-                                onClick={() => navigator.clipboard.writeText(video._id)}
-                            >
-                                Copy video ID
+
+                            <DropdownMenuItem onClick={() => onViewTranscript(v._id)} disabled={!canView}>
+                                View Transcript
                             </DropdownMenuItem>
+
                             <DropdownMenuSeparator />
-                            {/* no more “Process transcript” */}
-                            <DropdownMenuItem onClick={() => onDelete(video._id)}>
-                                Delete video
+
+                            <DropdownMenuItem onClick={() => onDelete(v._id)}>
+                                Delete
                             </DropdownMenuItem>
                         </DropdownMenuContent>
                     </DropdownMenu>

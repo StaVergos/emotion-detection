@@ -2,11 +2,14 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { AddVideo } from "./components/videos/addVideo"
 import VideoTablePage from "./components/videos/page"
 import type { VideoItem, ProcessingStatus } from "./types"
+import { TranscriptDialog } from "./components/videos/transcriptDialog"
 
 function App() {
   const [videos, setVideos] = useState<VideoItem[]>([])
   const [loading, setLoading] = useState(true)
   const [errorMessage, setError] = useState<string | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [currentTranscript, setCurrentTranscript] = useState("")
 
   const [processingStatus, setProcessingStatus] = useState<
     Record<string, ProcessingStatus>
@@ -18,36 +21,20 @@ function App() {
     setError(null)
     try {
       const res = await fetch("http://localhost:8000/videos")
-
-      // empty list is fine
-      if (res.status === 404) {
-        setVideos([])
-        return
-      }
-
+      if (res.status === 404) { setVideos([]); return }
       const json = await res.json()
-      if (!res.ok) {
-        const detail =
-          typeof json === "object" && "detail" in json
-            ? (json.detail as string)
-            : `Error ${res.status}`
-        throw new Error(detail)
-      }
-
-      const normalized: VideoItem[] = json.videos.map((raw: any) => ({
-        _id: raw._id,
-        id: raw._id.slice(-5),
-        audio_object: raw.audio_object_path,
-        created_at: new Date(raw.created_at)
-          .toISOString()
-          .replace("T", " ")
-          .split(".")[0],
-        emotion_prompt_result: raw.emotion_prompt_result,
-        emotions: raw.emotion_chunks,
-        transcript: raw.transcription_result,
-        processing_status: raw.processing_status,
-        video_filename: raw.video_filename,
-        video_object: raw.video_object_path,
+      if (!res.ok) throw new Error((json.detail as string) || `Error ${res.status}`)
+      const normalized = json.videos.map((r: any) => ({
+        _id: r._id,
+        id: r._id.slice(-5),
+        audio_object: r.audio_object_path,
+        created_at: new Date(r.created_at).toISOString().split("T").join(" ").split(".")[0],
+        emotion_prompt_result: r.emotion_prompt_result,
+        emotions: r.emotion_chunks,
+        transcript: r.transcription_result,
+        processing_status: r.processing_status,
+        video_filename: r.video_filename,
+        video_object: r.video_object_path,
       }))
       setVideos(normalized)
     } catch (err: any) {
@@ -99,7 +86,6 @@ function App() {
 
   const handleUploadSuccess = useCallback(
     (videoId: string) => {
-      // start listening to the video_id channel
       listenToJob(videoId, "video_uploaded")
       fetchVideos()
     },
@@ -125,6 +111,14 @@ function App() {
     [fetchVideos]
   )
 
+  const handleViewTranscript = useCallback((videoId: string) => {
+    const vid = videos.find(v => v._id === videoId)
+    if (vid && vid.transcript) {
+      setCurrentTranscript(vid.transcript)
+      setDialogOpen(true)
+    }
+  }, [videos])
+
   useEffect(() => {
     return () => {
       Object.values(wsRefs.current).forEach((ws) => ws.close())
@@ -144,6 +138,12 @@ function App() {
           data={videos}
           processingStatus={processingStatus}
           onDelete={handleDelete}
+          onViewTranscript={handleViewTranscript}
+        />
+        <TranscriptDialog
+          open={dialogOpen}
+          transcript={currentTranscript}
+          onClose={() => setDialogOpen(false)}
         />
       </div>
     </div>
