@@ -25,15 +25,6 @@ class EmotionType(StrEnum):
     DISGUST = "disgust"
 
 
-class ProcessingStatus(StrEnum):
-    VIDEO_UPLOADED = "video_uploaded"
-    AUDIO_EXTRACTED = "audio_extracted"
-    TRANSCRIPTION_COMPLETED = "transcription_completed"
-    TRANSCRIPTION_EMOTION_COMPLETED = "transcription_emotion_completed"
-    AUDIO_CHUNKS_UPLOADED = "audio_chunks_uploaded"
-    AUDIO_CHUNKS_EMOTION_COMPLETED = "audio_chunks_emotion_completed"
-
-
 class Error(BaseSchema):
     code: int = Field(..., description="HTTP status code for the error")
     message: str = Field(..., description="Error message describing the issue")
@@ -129,10 +120,6 @@ class EmotionDetectionItem(BaseSchema):
         default_factory=lambda: datetime.now(timezone.utc),
         description="UTC timestamp when this record was created",
     )
-    processing_status: ProcessingStatus | None = Field(
-        None,
-        description="Current status of the video processing",
-    )
     audio_object_path: str | None = Field(
         None, description="MinIO key where the extracted audio is stored"
     )
@@ -142,6 +129,38 @@ class EmotionDetectionItem(BaseSchema):
     emotion_chunks: list[EmotionSegment] | None = Field(
         default_factory=list,
         description="List of detected emotions with timestamps",
+    )
+    video_uploaded_at: datetime | None = Field(
+        default=None,
+        description="Timestamp when the video was uploaded",
+    )
+    audio_extracted_at: datetime | None = Field(
+        default=None,
+        description="Timestamp when the audio was extracted from the video",
+    )
+    transcription_completed_at: datetime | None = Field(
+        default=None,
+        description="Timestamp when the transcription was completed",
+    )
+    transcription_chunks_emotion_completed_at: datetime | None = Field(
+        default=None,
+        description="Timestamp when emotion detection on transcription chunks was completed",
+    )
+    audio_chunks_uploaded_at: datetime | None = Field(
+        default=None,
+        description="Timestamp when audio chunks were uploaded to MinIO",
+    )
+    audio_chunks_emotion_completed_at: datetime | None = Field(
+        default=None,
+        description="Timestamp when emotion detection on audio chunks was completed",
+    )
+    video_face_recognizion_at: datetime | None = Field(
+        default=None,
+        description="Timestamp when face recognition on the video was completed",
+    )
+    video_face_recognizion_emotion_at: datetime | None = Field(
+        default=None,
+        description="Timestamp when emotion detection on video faces was completed",
     )
 
     def as_document(self):

@@ -1,3 +1,4 @@
+import datetime
 import os
 import tempfile
 import time
@@ -12,7 +13,6 @@ from src.file_processing import break_audio_into_chunks, extract_audio_from_vide
 from src.analysis.transcript import get_transcript
 from src.analysis.short import emotional_detection_for_each_timestamp
 from src.api.schemas import (
-    ProcessingStatus,
     EmotionDetectionItem,
     TranscriptionResult,
 )
@@ -62,14 +62,11 @@ def extract_audio_task(video_id: str) -> None:
         with open(wav_path, "rb") as wf:
             minio.upload_fileobj(wf, minio.bucket_name, audio_key)
 
+        edi.audio_object_path = audio_key
+        edi.audio_extracted_at = datetime.datetime.now(datetime.timezone.utc)
+
         emotion_detection_collection.update_one(
-            {"_id": video_id},
-            {
-                "$set": {
-                    "audio_object_path": audio_key,
-                    "processing_status": ProcessingStatus.AUDIO_EXTRACTED.value,
-                }
-            },
+            {"_id": video_id}, {"$set": edi.as_document()}
         )
 
         elapsed = time.time() - start
@@ -116,12 +113,22 @@ def analyze_audio_task(video_id: str) -> None:
     try:
         tr: TranscriptionResult = get_transcript(wav_path)
         logger.info(f"[{video_id}]: transcribed in {time.time() - start:.2f}s")
+        edi.transcription_completed_at = datetime.datetime.now(datetime.timezone.utc)
+        edi.transcription_result = tr.text
+        emotion_detection_collection.update_one(
+            {"_id": video_id},
+            {
+                "$set": edi.as_document(),
+            },
+        )
         _publish_step(video_id, "transcription_completed")
 
         chunks = emotional_detection_for_each_timestamp(tr)
         edi.transcription_result = tr.text
         edi.emotion_chunks = chunks
-        edi.processing_status = ProcessingStatus.TRANSCRIPTION_EMOTION_COMPLETED.value
+        edi.transcription_chunks_emotion_completed_at = datetime.datetime.now(
+            datetime.timezone.utc
+        )
         emotion_detection_collection.update_one(
             {"_id": video_id}, {"$set": edi.as_document()}
         )
@@ -181,8 +188,10 @@ def chunk_audio_task(video_id: str) -> None:
             d["audio_chunk_file_path"] = keys[i]
             updated.append(d)
 
+        edi.audio_chunks_uploaded_at = datetime.datetime.now(datetime.timezone.utc)
+        edi.emotion_chunks = updated
         emotion_detection_collection.update_one(
-            {"_id": video_id}, {"$set": {"emotion_chunks": updated}}
+            {"_id": video_id}, {"$set": edi.as_document()}
         )
 
         logger.info(f"[{video_id}]: audio chunked ({len(updated)} chunks)")

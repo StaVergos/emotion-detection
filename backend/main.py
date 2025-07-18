@@ -28,7 +28,6 @@ from src.api.schemas import (
     EmotionDetectionItem,
     VideosResponse,
     VideoError,
-    ProcessingStatus,
     UploadedVideoResponse,
 )
 from src.tasks import trigger_video_processing
@@ -129,7 +128,7 @@ def upload_video(file: UploadFile):
         video_filename=orig_name,
         video_object_path=video_key,
         created_at=created_at,
-        processing_status=ProcessingStatus.VIDEO_UPLOADED.value,
+        video_uploaded_at=created_at,
     )
     emotion_detection_collection.insert_one(edi.model_dump())
 
