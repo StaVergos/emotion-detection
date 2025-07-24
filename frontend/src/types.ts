@@ -14,12 +14,13 @@ export type Emotions = {
 
 export type ProcessingStatus =
     | "video_uploaded"
-    | "extracting_audio"
-    | "audio_uploaded"
-    | "analyzing_audio"
-    | "emotions_detected"
-    | "chunking_audio"
-    | "audio_chunked"
+    | "audio_extracted"
+    | "transcription_completed"
+    | "transcription_chunks_emotion_completed"
+    | "audio_chunks_uploaded"
+    | "audio_chunks_emotion_completed"
+    | "video_face_recognizion"
+    | "video_face_recognizion_emotion"
 
 export type VideoItem = {
     _id: string
