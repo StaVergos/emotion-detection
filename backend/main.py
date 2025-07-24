@@ -144,9 +144,8 @@ def delete_video(video_id: str):
     if not edi:
         raise HTTPException(404, "Video not found.")
     emotion_chunks = edi.emotion_chunks
-    if not emotion_chunks:
+    if emotion_chunks:
         logger.warning(f"[{video_id}] No emotion chunks to delete.")
-    else:
         keys = [
             chunk.audio_chunk_file_path
             for chunk in emotion_chunks
@@ -155,8 +154,8 @@ def delete_video(video_id: str):
         keys.append(edi.audio_object_path)
         if not keys:
             logger.warning(f"[{video_id}] No valid audio chunk filenames to delete.")
-    for key in filter(None, keys):
-        minio.s3.delete_object(Bucket=minio.bucket_name, Key=key)
+        for key in filter(None, keys):
+            minio.s3.delete_object(Bucket=minio.bucket_name, Key=key)
 
     emotion_detection_collection.delete_one({"_id": video_id})
     return {"message": "Video deleted successfully."}
