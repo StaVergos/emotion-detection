@@ -16,6 +16,7 @@ from src.api.schemas import (
     EmotionDetectionItem,
     TranscriptionResult,
 )
+from src.analysis.audio_emotion import get_emotion_scores_from_file
 
 logger = get_logger()
 minio = MinioClient()
@@ -207,14 +208,54 @@ def chunk_audio_task(video_id: str) -> None:
         logger.info(f"[{video_id}]: cleaned temp file")
 
 
+def calculate_audio_emotion_scores_task(video_id: str) -> None:
+    job = get_current_job()
+    logger.info(f"[{video_id}]: calculate_emotion_scores_task start")
+    job.meta["step"] = "calculating_emotion_scores"
+    job.save_meta()
+    _publish_step(video_id, "calculating_emotion_scores")
+    rec = emotion_detection_collection.find_one({"_id": video_id})
+    if not rec:
+        msg = f"No record for video {video_id}"
+        logger.error(msg)
+        raise RuntimeError(msg)
+    edi = EmotionDetectionItem.model_validate(rec)
+    if not edi.emotion_chunks:
+        msg = f"No audio chunks for video {video_id}"
+        logger.error(msg)
+        raise RuntimeError(msg)
+    audio_calculations = []
+    for chunk in edi.emotion_chunks:
+        if not chunk.audio_chunk_file_path:
+            logger.warning(
+                f"[{video_id}]: No audio chunk file path for segment {chunk.id}"
+            )
+            continue
+        data = minio.get_fileobj_in_memory(
+            minio.bucket_name, chunk.audio_chunk_file_path
+        ).read()
+        scores = get_emotion_scores_from_file(data)
+        audio_calculations.append(
+            {
+                "chunk_timestamp": chunk.timestamp,
+                "scores": scores,
+            }
+        )
+    logger.warning(f"[{video_id}]: audio chunk emotion scores calculated")
+    logger.warning(audio_calculations)
+
+
 def trigger_video_processing(video_id: str) -> str:
     """
     Enqueue each step in sequence—no parent/orchestrator job.
-    Returns the first (extract_audio_task) job’s ID, but
+    Returns the first (extract_audio_task) job's ID, but
     WebSocket clients subscribe by video_id, not by job_id.
     """
-    j1 = queue.enqueue(extract_audio_task, video_id)
-    queue.enqueue(analyze_audio_task, video_id, depends_on=j1)
-    queue.enqueue(chunk_audio_task, video_id, depends_on=j1)
-    logger.info(f"[{video_id}] 🎬 triggered pipeline")
+    j1 = queue.enqueue(extract_audio_task, video_id, timeout=3600)
+    queue.enqueue(analyze_audio_task, video_id, depends_on=j1, timeout=3600)
+    queue.enqueue(chunk_audio_task, video_id, depends_on=j1, timeout=3600)
+    queue.enqueue(
+        calculate_audio_emotion_scores_task, video_id, depends_on=j1, timeout=3600
+    )
+    logger.info(f"[{video_id}] triggered pipeline")
     return j1.id
