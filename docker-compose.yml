@@ -56,27 +56,26 @@ services:
     ports:
       - "6379:6379"
     restart: always
-  worker:
-    build:
-      context: ./backend
-    volumes:
-      - ./backend:/app:cached
-      - backend_venv:/app/.venv
-    working_dir: /app
-    environment:
-      - REDIS_URL=redis://redis:6379
-      - MINIO_ENDPOINT=http://minio:9000
-      - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=minioadmin
-      - MINIO_BUCKET=emotion-detection
-      - MINIO_REGION=us-east-1
-      - MONGODB_URI=mongodb://mongodb:27017/
-    # command: [ "rq", "worker", "emotion_detection" ]
-    command: [ "python", "worker.py" ]
-    depends_on:
-      - redis
-      - minio
-      - mongodb
+  # worker:
+  #   build:
+  #     context: ./backend
+  #   volumes:
+  #     - ./backend:/app:cached
+  #     - backend_venv:/app/.venv
+  #   working_dir: /app
+  #   environment:
+  #     - REDIS_URL=redis://redis:6379
+  #     - MINIO_ENDPOINT=http://minio:9000
+  #     - MINIO_ROOT_USER=minioadmin
+  #     - MINIO_ROOT_PASSWORD=minioadmin
+  #     - MINIO_BUCKET=emotion-detection
+  #     - MINIO_REGION=us-east-1
+  #     - MONGODB_URI=mongodb://mongodb:27017/
+  #   command: [ "python", "worker.py" ]
+  #   depends_on:
+  #     - redis
+  #     - minio
+  #     - mongodb
 
 volumes:
   minio-data:
