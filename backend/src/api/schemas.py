@@ -173,23 +173,12 @@ class EmotionDetectionItem(BaseSchema):
         description="Timestamp when emotion detection on video faces was completed",
     )
 
-    def as_document(self):
-        """
-        Convert the EmotionDetectionItem to a dictionary suitable for MongoDB storage.
-        """
-        emotion_chunks_data = []
-        if self.emotion_chunks:
-            for chunk in self.emotion_chunks:
-                emotion_chunks_data.append(chunk.model_dump())
-        return {
-            "_id": self.id,
-            "video_filename": self.video_filename,
-            "video_object_path": self.video_object_path,
-            "created_at": self.created_at,
-            "audio_object_path": self.audio_object_path,
-            "transcription_result": self.transcription_result,
-            "emotion_chunks": emotion_chunks_data,
-        }
+    def as_document(self) -> dict:
+        """Convert the model to a MongoDB document format."""
+        doc = self.model_dump(by_alias=True, exclude_none=True)
+        if "id" in doc:
+            doc["_id"] = doc.pop("id")
+        return doc
 
 
 class UploadedVideoResponse(EmotionDetectionItem):
