@@ -41,6 +41,12 @@ class VideoError(BaseSchema):
     )
 
 
+class AudioVADScore(BaseSchema):
+    arousal: float = Field(..., description="Arousal score from audio VAD analysis")
+    dominance: float = Field(..., description="Dominance score from audio VAD analysis")
+    valence: float = Field(..., description="Valence score from audio VAD analysis")
+
+
 class TranscriptionChunk(BaseSchema):
     timestamp: tuple[float, float] = Field(
         ..., description="Start and end timestamps of the audio chunk in seconds"
@@ -85,6 +91,10 @@ class EmotionSegment(BaseSchema):
     emotion: EmotionType = Field(..., description="Detected emotion label")
     emotion_score: float = Field(
         ..., description="Confidence score of the detected emotion"
+    )
+    vad_score: AudioVADScore | None = Field(
+        default=None,
+        description="Optional VAD scores for arousal, dominance, and valence",
     )
     audio_chunk_file_path: str | None = Field(
         default=None,
@@ -176,7 +186,6 @@ class EmotionDetectionItem(BaseSchema):
             "video_filename": self.video_filename,
             "video_object_path": self.video_object_path,
             "created_at": self.created_at,
-            "processing_status": self.processing_status,
             "audio_object_path": self.audio_object_path,
             "transcription_result": self.transcription_result,
             "emotion_chunks": emotion_chunks_data,
