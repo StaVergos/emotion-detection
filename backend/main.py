@@ -30,7 +30,7 @@ from src.api.schemas import (
     VideoError,
     UploadedVideoResponse,
 )
-from src.tasks import trigger_video_processing
+from src.analysis.pipelines import trigger_video_processing
 from src.api.exceptions import APIError
 
 logger = get_logger()
