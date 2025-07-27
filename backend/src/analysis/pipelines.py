@@ -10,9 +10,11 @@ from src.mongodb import emotion_detection_collection
 from src.file_processing import break_audio_into_chunks, extract_audio_from_video
 from src.analysis.transcript import get_transcript
 from src.analysis.short import emotional_detection_for_each_timestamp
+from src.analysis.face_emotion import analyze_video_intervals
 from src.api.schemas import (
     EmotionDetectionItem,
     TranscriptionResult,
+    FaceEmotions,
 )
 from src.analysis.audio_emotion import get_emotion_scores_from_file
 
@@ -195,6 +197,7 @@ def calculate_audio_emotion_scores_task(video_id: str) -> None:
         ).read()
         scores = get_emotion_scores_from_file(data)
         chunk.vad_score = scores
+    edi.audio_chunks_emotion_completed_at = datetime.datetime.now(datetime.timezone.utc)
     emotion_detection_collection.update_one(
         {"_id": video_id}, {"$set": edi.as_document()}
     )
@@ -203,9 +206,73 @@ def calculate_audio_emotion_scores_task(video_id: str) -> None:
     logger.warning(audio_calculations)
 
 
+def get_face_emotion_scores(video_id: str) -> list[dict]:
+    logger.info(f"[{video_id}]: get_face_emotion_scores start")
+    rec = emotion_detection_collection.find_one({"_id": video_id})
+    if not rec:
+        msg = f"No record for video {video_id}"
+        logger.error(msg)
+        raise RuntimeError(msg)
+
+    edi = EmotionDetectionItem.model_validate(rec)
+    if not edi.emotion_chunks:
+        msg = f"No emotion chunks for video {video_id}"
+        logger.error(msg)
+        raise RuntimeError(msg)
+
+    if not edi.video_object_path:
+        msg = f"No video object path for video {video_id}"
+        logger.error(msg)
+        raise RuntimeError(msg)
+
+    timestamps = [tuple(seg.timestamp) for seg in edi.emotion_chunks]
+    if not timestamps:
+        msg = f"No valid timestamps for video {video_id}"
+        logger.error(msg)
+        raise RuntimeError(msg)
+
+    video_obj = minio.get_fileobj_in_memory(minio.bucket_name, edi.video_object_path)
+    if not video_obj:
+        msg = f"No video data for {video_id}"
+        logger.error(msg)
+        raise RuntimeError(msg)
+
+    data = video_obj.read()
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as vf:
+        vf.write(data)
+        tmp_path = vf.name
+
+    try:
+        face_emotion_scores = analyze_video_intervals(tmp_path, timestamps)
+        if not face_emotion_scores:
+            logger.warning(f"[{video_id}]: No face emotions detected")
+            return []
+        logger.info(
+            f"[{video_id}]: face emotions detected ({len(face_emotion_scores)}). Emotions: {face_emotion_scores}."
+        )
+        for score in face_emotion_scores:
+            for chunk in edi.emotion_chunks:
+                if chunk.timestamp == score["timestamp"]:
+                    chunk.face_emotions = FaceEmotions(**score["emotions"])
+                    break
+        edi.video_face_recognition_emotion_at = datetime.datetime.now(
+            datetime.timezone.utc
+        )
+        emotion_detection_collection.update_one(
+            {"_id": video_id}, {"$set": edi.as_document()}
+        )
+        return face_emotion_scores
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+
 def trigger_video_processing(video_id: str) -> str:
     extract_audio_task(video_id)
     analyze_audio_task(video_id)
     chunk_audio_task(video_id)
     calculate_audio_emotion_scores_task(video_id)
+    get_face_emotion_scores(video_id)
     return video_id
