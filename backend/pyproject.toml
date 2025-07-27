@@ -9,6 +9,7 @@ dependencies = [
     "boto3>=1.38.46",
     "datasets>=3.5.0",
     "dotenv>=0.9.9",
+    "facenet-pytorch>=2.5.3",
     "fastapi[standard]>=0.115.12",
     "hf-xet>=1.1.5",
     "ipython>=9.3.0",
