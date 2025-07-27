@@ -83,6 +83,25 @@ class TranscriptionResult(BaseSchema):
     )
 
 
+class FaceEmotions(BaseSchema):
+    angry: float | None = Field(
+        default=None, description="Probability of anger emotion"
+    )
+    disgust: float | None = Field(
+        default=None, description="Probability of disgust emotion"
+    )
+    fear: float | None = Field(default=None, description="Probability of fear emotion")
+    happy: float | None = Field(
+        default=None, description="Probability of happiness emotion"
+    )
+    neutral: float | None = Field(
+        default=None, description="Probability of neutrality emotion"
+    )
+    sad: float | None = Field(
+        default=None, description="Probability of sadness emotion"
+    )
+
+
 class EmotionSegment(BaseSchema):
     timestamp: tuple[float, float] = Field(
         ..., description="Start and end timestamps of the emotion segment"
@@ -99,6 +118,10 @@ class EmotionSegment(BaseSchema):
     audio_chunk_file_path: str | None = Field(
         default=None,
         description="MinIO key where the audio chunk is stored, if applicable",
+    )
+    face_emotions: FaceEmotions | None = Field(
+        default=None,
+        description="Optional face emotion probabilities for this segment",
     )
 
     model_config = ConfigDict(
@@ -164,11 +187,7 @@ class EmotionDetectionItem(BaseSchema):
         default=None,
         description="Timestamp when emotion detection on audio chunks was completed",
     )
-    video_face_recognizion_at: datetime | None = Field(
-        default=None,
-        description="Timestamp when face recognition on the video was completed",
-    )
-    video_face_recognizion_emotion_at: datetime | None = Field(
+    video_face_recognition_emotion_at: datetime | None = Field(
         default=None,
         description="Timestamp when emotion detection on video faces was completed",
     )
