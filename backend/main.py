@@ -31,6 +31,7 @@ from src.api.schemas import (
     UploadedVideoResponse,
 )
 from src.analysis.pipelines import trigger_video_processing
+from src.analysis.prompt_gpt2 import analyze_prompt_with_gpt2
 from src.api.exceptions import APIError
 
 logger = get_logger()
@@ -159,6 +160,17 @@ def delete_video(video_id: str):
 
     emotion_detection_collection.delete_one({"_id": video_id})
     return {"message": "Video deleted successfully."}
+
+
+@app.get("/videos/{video_id}/gpt2")
+def get_video_gpt2(video_id: str):
+    item = emotion_detection_collection.find_one({"_id": video_id})
+    if not item:
+        raise HTTPException(404, "Video not found.")
+
+    edi = EmotionDetectionItem.model_validate(item)
+    segments = edi.emotion_chunks
+    return {"summary": analyze_prompt_with_gpt2(segments)}
 
 
 @app.websocket("/ws/status/{video_id}")
