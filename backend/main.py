@@ -20,6 +20,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from redis import Redis
 
+from src.analysis.emo_llama import analyze_prompt_with_emo_llama
+from src.api.constants import EmotionModel
 from src.api.config import get_logger
 from src.minio import MinioClient
 from src.mongodb import emotion_detection_collection, check_record_exists
@@ -31,8 +33,9 @@ from src.api.schemas import (
     UploadedVideoResponse,
 )
 from src.analysis.pipelines import trigger_video_processing
-from src.analysis.prompt_gpt2 import analyze_prompt_with_gpt2
+from src.analysis.gpt2 import analyze_prompt_with_gpt2
 from src.api.exceptions import APIError
+from src.analysis.prompt import build_condition_prompt
 
 logger = get_logger()
 minio = MinioClient()
@@ -162,15 +165,27 @@ def delete_video(video_id: str):
     return {"message": "Video deleted successfully."}
 
 
-@app.get("/videos/{video_id}/gpt2")
-def get_video_gpt2(video_id: str):
+@app.get("/videos/{video_id}/{model_name}")
+def get_video_emotion_prompt(video_id: str, model_name: EmotionModel):
     item = emotion_detection_collection.find_one({"_id": video_id})
     if not item:
         raise HTTPException(404, "Video not found.")
 
     edi = EmotionDetectionItem.model_validate(item)
     segments = edi.emotion_chunks
-    return {"summary": analyze_prompt_with_gpt2(segments)}
+    base_prompt = build_condition_prompt(segments)
+    if model_name == EmotionModel.GPT2:
+        return {
+            "model": EmotionModel.GPT2,
+            "prompt": base_prompt,
+            "summary": analyze_prompt_with_gpt2(base_prompt),
+        }
+    elif model_name == EmotionModel.EMO_LLAMA:
+        return {
+            "model": EmotionModel.EMO_LLAMA,
+            "prompt": base_prompt,
+            "summary": analyze_prompt_with_emo_llama(base_prompt),
+        }
 
 
 @app.websocket("/ws/status/{video_id}")
