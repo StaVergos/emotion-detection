@@ -25,6 +25,11 @@ class EmotionType(StrEnum):
     DISGUST = "disgust"
 
 
+class EmotionModel(StrEnum):
+    GPT2 = "gpt2"
+    EMO_LLAMA = "emo_llama"
+
+
 class Error(BaseSchema):
     code: int = Field(..., description="HTTP status code for the error")
     message: str = Field(..., description="Error message describing the issue")
@@ -39,6 +44,12 @@ class VideoError(BaseSchema):
         default_factory=list,
         description="List of errors encountered during video processing",
     )
+
+
+class AudioVADScore(BaseSchema):
+    arousal: float = Field(..., description="Arousal score from audio VAD analysis")
+    dominance: float = Field(..., description="Dominance score from audio VAD analysis")
+    valence: float = Field(..., description="Valence score from audio VAD analysis")
 
 
 class TranscriptionChunk(BaseSchema):
@@ -77,6 +88,25 @@ class TranscriptionResult(BaseSchema):
     )
 
 
+class FaceEmotions(BaseSchema):
+    angry: float | None = Field(
+        default=None, description="Probability of anger emotion"
+    )
+    disgust: float | None = Field(
+        default=None, description="Probability of disgust emotion"
+    )
+    fear: float | None = Field(default=None, description="Probability of fear emotion")
+    happy: float | None = Field(
+        default=None, description="Probability of happiness emotion"
+    )
+    neutral: float | None = Field(
+        default=None, description="Probability of neutrality emotion"
+    )
+    sad: float | None = Field(
+        default=None, description="Probability of sadness emotion"
+    )
+
+
 class EmotionSegment(BaseSchema):
     timestamp: tuple[float, float] = Field(
         ..., description="Start and end timestamps of the emotion segment"
@@ -86,9 +116,17 @@ class EmotionSegment(BaseSchema):
     emotion_score: float = Field(
         ..., description="Confidence score of the detected emotion"
     )
+    vad_score: AudioVADScore | None = Field(
+        default=None,
+        description="Optional VAD scores for arousal, dominance, and valence",
+    )
     audio_chunk_file_path: str | None = Field(
         default=None,
         description="MinIO key where the audio chunk is stored, if applicable",
+    )
+    face_emotions: FaceEmotions | None = Field(
+        default=None,
+        description="Optional face emotion probabilities for this segment",
     )
 
     model_config = ConfigDict(
@@ -154,33 +192,17 @@ class EmotionDetectionItem(BaseSchema):
         default=None,
         description="Timestamp when emotion detection on audio chunks was completed",
     )
-    video_face_recognizion_at: datetime | None = Field(
-        default=None,
-        description="Timestamp when face recognition on the video was completed",
-    )
-    video_face_recognizion_emotion_at: datetime | None = Field(
+    video_face_recognition_emotion_at: datetime | None = Field(
         default=None,
         description="Timestamp when emotion detection on video faces was completed",
     )
 
-    def as_document(self):
-        """
-        Convert the EmotionDetectionItem to a dictionary suitable for MongoDB storage.
-        """
-        emotion_chunks_data = []
-        if self.emotion_chunks:
-            for chunk in self.emotion_chunks:
-                emotion_chunks_data.append(chunk.model_dump())
-        return {
-            "_id": self.id,
-            "video_filename": self.video_filename,
-            "video_object_path": self.video_object_path,
-            "created_at": self.created_at,
-            "processing_status": self.processing_status,
-            "audio_object_path": self.audio_object_path,
-            "transcription_result": self.transcription_result,
-            "emotion_chunks": emotion_chunks_data,
-        }
+    def as_document(self) -> dict:
+        """Convert the model to a MongoDB document format."""
+        doc = self.model_dump(by_alias=True, exclude_none=True)
+        if "id" in doc:
+            doc["_id"] = doc.pop("id")
+        return doc
 
 
 class UploadedVideoResponse(EmotionDetectionItem):
@@ -195,3 +217,21 @@ class VideosResponse(BaseSchema):
     total: int = Field(..., description="Total number of videos in the collection")
 
     model_config = ConfigDict(json_schema_extra={"example": {"total": 1}})
+
+
+class EmotionLLMResponse(BaseSchema):
+    model: EmotionModel = Field(
+        ..., description="Name of the emotion analysis model used"
+    )
+    prompt: str = Field(..., description="Generated prompt for the emotion analysis")
+    analysis: str = Field(..., description="Resulting analysis from the model")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "model": EmotionModel.EMO_LLAMA,
+                "prompt": "You are a clinical psychologist...",
+                "analysis": "The speaker exhibits signs of joy and surprise.",
+            }
+        }
+    )

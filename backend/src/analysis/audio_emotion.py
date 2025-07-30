@@ -12,6 +12,7 @@ from transformers.models.wav2vec2.modeling_wav2vec2 import (
 
 from src.api.config import DEVICE
 from src.api.constants import AUDIO_EMOTION_MODEL
+from src.api.schemas import AudioVADScore
 
 
 class RegressionHead(nn.Module):
@@ -62,7 +63,7 @@ def get_emotion_scores_from_file(
     audio_file: str | bytes | io.BytesIO,
     sampling_rate: int = 16000,
     embeddings: bool = False,
-) -> dict[str, float | list]:
+) -> AudioVADScore:
     """
     Reads either a filepath or raw bytes/BytesIO, then returns arousal/dominance/valence.
     """
@@ -87,9 +88,8 @@ def get_emotion_scores_from_file(
         audio = audio.astype(np.float32)
 
     scores = process_func(audio[np.newaxis, :], sampling_rate, embeddings)[0]
-    return {
-        "arousal": float(scores[0]),
-        "dominance": float(scores[1]),
-        "valence": float(scores[2]),
-        "emotion_scores": [float(x) for x in scores],
-    }
+    return AudioVADScore(
+        arousal=float(scores[0]),
+        dominance=float(scores[1]),
+        valence=float(scores[2]),
+    )
