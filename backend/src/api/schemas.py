@@ -25,6 +25,11 @@ class EmotionType(StrEnum):
     DISGUST = "disgust"
 
 
+class EmotionModel(StrEnum):
+    GPT2 = "gpt2"
+    EMO_LLAMA = "emo_llama"
+
+
 class Error(BaseSchema):
     code: int = Field(..., description="HTTP status code for the error")
     message: str = Field(..., description="Error message describing the issue")
@@ -212,3 +217,21 @@ class VideosResponse(BaseSchema):
     total: int = Field(..., description="Total number of videos in the collection")
 
     model_config = ConfigDict(json_schema_extra={"example": {"total": 1}})
+
+
+class EmotionLLMResponse(BaseSchema):
+    model: EmotionModel = Field(
+        ..., description="Name of the emotion analysis model used"
+    )
+    prompt: str = Field(..., description="Generated prompt for the emotion analysis")
+    analysis: str = Field(..., description="Resulting analysis from the model")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "model": EmotionModel.EMO_LLAMA,
+                "prompt": "You are a clinical psychologist...",
+                "analysis": "The speaker exhibits signs of joy and surprise.",
+            }
+        }
+    )
