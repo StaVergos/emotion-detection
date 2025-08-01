@@ -4,6 +4,9 @@ from src.api.config import OPENAI_API_KEY, get_logger
 
 logger = get_logger()
 
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY must be set in the environment variables.")
+
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 
