@@ -1,14 +1,13 @@
 from src.api.schemas import EmotionSegment
 
 
-def build_condition_prompt(chunks: list[EmotionSegment]) -> str:
-    lines = [
-        "You are a clinical psychologist.  Below is a multimodal breakdown of a speaker."
-    ]
-    lines.append(
-        "Please summarize their overall emotional and psychological condition.\n"
+def build_condition_messages(chunks: list[EmotionSegment]) -> list[dict[str, str]]:
+    system_content = (
+        "You are a clinical psychologist. Below is a multimodal breakdown of a speaker.\n"
+        "Please summarize their overall emotional and psychological condition."
     )
-    lines.append("Timeline:\n")
+
+    lines = ["Timeline:"]
     for seg in chunks:
         start, end = seg.timestamp
         ts = f"{int(start // 60):02d}:{int(start % 60):02d}-{int(end // 60):02d}:{int(end % 60):02d}"
@@ -19,7 +18,13 @@ def build_condition_prompt(chunks: list[EmotionSegment]) -> str:
         face_str = ", ".join(f"{k}:{getattr(fe, k):.2f}" for k in type(fe).model_fields)
         text = seg.text.strip()
         lines.append(
-            f"[{ts}]Text: {text}Text-emo: {te}Audio(VAD): {va}Face: {face_str}\n"
+            f"[{ts}] Text: {text}  Text‐emo: {te}  Audio(VAD): {va}  Face: {face_str}"
         )
-    lines.append("Answer in a few paragraphs:")
-    return "\n".join(lines)
+
+    lines.append("\nAnswer in a few paragraphs:")
+    user_content = "\n".join(lines)
+
+    return [
+        {"role": "system", "content": system_content},
+        {"role": "user", "content": user_content},
+    ]
