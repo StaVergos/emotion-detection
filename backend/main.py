@@ -21,21 +21,28 @@ from fastapi.responses import JSONResponse
 from redis import Redis
 
 from src.analysis.emo_llama import analyze_prompt_with_emo_llama
-from src.api.constants import EmotionModel
 from src.api.config import get_logger
 from src.minio import MinioClient
-from src.mongodb import emotion_detection_collection, check_record_exists
+from src.mongodb import (
+    emotion_detection_collection,
+    openai_analysis_collection,
+    check_record_exists,
+    check_video_has_openai_analysis,
+)
 from src.api.schemas import (
+    EmotionModel,
     Error,
     EmotionDetectionItem,
     VideosResponse,
     VideoError,
     UploadedVideoResponse,
+    OpenAIAnalysisItem,
 )
 from src.analysis.pipelines import trigger_video_processing
 from src.analysis.gpt2 import analyze_prompt_with_gpt2
 from src.api.exceptions import APIError
-from src.analysis.prompt import build_condition_prompt
+from src.analysis.prompt import build_condition_messages
+from src.analysis.openai import make_request_to_openai
 
 logger = get_logger()
 minio = MinioClient()
@@ -165,6 +172,50 @@ def delete_video(video_id: str):
     return {"message": "Video deleted successfully."}
 
 
+@app.get("/videos/{video_id}/openai/analysis", status_code=200)
+def get_openai_analysis(video_id: str):
+    """Get OpenAI analysis for the video."""
+    if not check_video_has_openai_analysis(video_id):
+        raise HTTPException(404, "OpenAI analysis not found for this video.")
+
+    item = openai_analysis_collection.find_one({"video_id": video_id})
+    if not item:
+        raise HTTPException(404, "OpenAI analysis not found for this video.")
+
+    return {
+        "video_id": item["video_id"],
+        "prompt": item["prompt"],
+        "analysis": item["analysis"],
+    }
+
+
+@app.get("/videos/{video_id}/openai")
+def get_analysis_from_openai(video_id: str):
+    """Get OpenAI analysis for the video."""
+    if check_video_has_openai_analysis(video_id):
+        raise HTTPException(404, "OpenAI analysis found for this video.")
+    item = emotion_detection_collection.find_one({"_id": video_id})
+    if not item:
+        raise HTTPException(404, "Video not found.")
+
+    edi = EmotionDetectionItem.model_validate(item)
+    segments = edi.emotion_chunks
+    if not segments:
+        raise HTTPException(400, "No emotion segments found for this video.")
+
+    base_prompt = build_condition_messages(segments)
+    response_content = make_request_to_openai(base_prompt)
+
+    oai = OpenAIAnalysisItem(
+        video_id=video_id,
+        prompt=base_prompt,
+        analysis=response_content,
+    )
+    openai_analysis_collection.insert_one(oai.as_document())
+
+    return oai
+
+
 @app.get("/videos/{video_id}/{model_name}")
 def get_video_emotion_prompt(video_id: str, model_name: EmotionModel):
     item = emotion_detection_collection.find_one({"_id": video_id})
@@ -173,7 +224,7 @@ def get_video_emotion_prompt(video_id: str, model_name: EmotionModel):
 
     edi = EmotionDetectionItem.model_validate(item)
     segments = edi.emotion_chunks
-    base_prompt = build_condition_prompt(segments)
+    base_prompt = build_condition_messages(segments)
     if model_name == EmotionModel.GPT2:
         return {
             "model": EmotionModel.GPT2,
