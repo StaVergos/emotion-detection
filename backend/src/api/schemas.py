@@ -235,3 +235,26 @@ class EmotionLLMResponse(BaseSchema):
             }
         }
     )
+
+
+class OpenAIAnalysisItem(BaseSchema):
+    video_id: str = Field(..., description="ID of the video being analyzed")
+    prompt: list[dict[str, str]] = Field(
+        ..., description="Prompt sent to OpenAI for analysis"
+    )
+    analysis: str = Field(..., description="Analysis result returned by OpenAI")
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "video_id": "1234567890abcdef",
+                "prompt": "You are a clinical psychologist...",
+                "analysis": "The speaker exhibits signs of joy and surprise.",
+            }
+        }
+    )
+
+    def as_document(self) -> dict:
+        """Convert the model to a MongoDB document format."""
+        doc = self.model_dump(exclude_none=True)
+        return doc
