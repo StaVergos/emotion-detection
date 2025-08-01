@@ -223,8 +223,7 @@ def get_video_emotion_prompt(video_id: str, model_name: EmotionModel):
         raise HTTPException(404, "Video not found.")
 
     edi = EmotionDetectionItem.model_validate(item)
-    segments = edi.emotion_chunks
-    base_prompt = build_condition_messages(segments)
+    base_prompt = build_condition_messages(edi.transcription_result)
     if model_name == EmotionModel.GPT2:
         return {
             "model": EmotionModel.GPT2,

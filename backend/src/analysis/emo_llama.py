@@ -26,8 +26,12 @@ def analyze_prompt_with_emo_llama(prompt: str) -> str:
     model.generation_config.temperature = None
     model.generation_config.top_p = None
 
+    full_prompt = (
+        f"What is the emotion state of the speaker in the following text? {prompt}"
+    )
+
     input_features = tokenizer(
-        prompt,
+        full_prompt,
         return_tensors="pt",
         padding=True,
         truncation=True,
