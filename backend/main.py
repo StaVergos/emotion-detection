@@ -1,5 +1,3 @@
-import asyncio
-import json
 import os
 import shutil
 import tempfile
@@ -11,8 +9,6 @@ from fastapi import (
     FastAPI,
     UploadFile,
     HTTPException,
-    WebSocket,
-    WebSocketDisconnect,
     status,
     Request,
 )
@@ -236,36 +232,3 @@ def get_video_emotion_prompt(video_id: str, model_name: EmotionModel):
             "prompt": base_prompt,
             "summary": analyze_prompt_with_emo_llama(base_prompt),
         }
-
-
-@app.websocket("/ws/status/{video_id}")
-async def ws_video_status(websocket: WebSocket, video_id: str):
-    """
-    Subscribe to Redis pub/sub channel for this video_id and
-    forward every JSON‐encoded step to the client.
-    """
-    await websocket.accept()
-    pubsub = redis.pubsub()
-    pubsub.subscribe(f"video:{video_id}")
-    logger.info(f"WS open, subscribed to video:{video_id}")
-
-    try:
-        while True:
-            msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-            if msg and msg["type"] == "message":
-                raw = msg["data"]
-                try:
-                    payload = json.loads(
-                        raw.decode() if isinstance(raw, (bytes, bytearray)) else raw
-                    )
-                except Exception:
-                    payload = {"step": "unknown", "data": raw}
-                await websocket.send_json(payload)
-
-            await asyncio.sleep(0.1)
-    except WebSocketDisconnect:
-        logger.info(f"WS disconnected for video:{video_id}")
-    finally:
-        pubsub.close()
-        await websocket.close()
-        logger.info(f"WS closed for video:{video_id}")
