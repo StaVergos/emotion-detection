@@ -12,39 +12,13 @@ import {
 } from "@/components/ui/dropdown-menu"
 import type { VideoItem } from "../../types"
 
-const StageIndicator = React.memo(({ label }: { label: string }) => {
-    const [dots, setDots] = useState(0)
-    useEffect(() => {
-        const id = setInterval(() => {
-            setDots((d) => (d === 3 ? 0 : d + 1))
-        }, 500)
-        return () => clearInterval(id)
-    }, [])
-    return (
-        <span>
-            {label}
-            {".".repeat(dots)}
-        </span>
-    )
-})
-
 export function getVideoColumns(
     onDelete: (rawId: string) => void,
     onViewTranscript: (rawId: string) => void,
-    processingStatusRef: React.RefObject<Record<string, string>>
 ): ColumnDef<VideoItem>[] {
     return [
         { accessorKey: "id", header: "ID" },
         { accessorKey: "video_filename", header: "File" },
-        {
-            id: "status",
-            header: "Status",
-            cell: ({ row }) => {
-                const vid = row.original
-                const label = processingStatusRef.current?.[vid._id]
-                return label ? <StageIndicator label={label} /> : <span>{vid.processing_status}</span>
-            },
-        },
         { accessorKey: "created_at", header: "Created" },
         {
             id: "actions",

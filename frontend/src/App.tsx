@@ -7,13 +7,11 @@ import { TranscriptDialog } from "./components/videos/transcriptDialog"
 function App() {
   const [videos, setVideos] = useState<VideoItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [processingStatus, setProcessingStatus] = useState(false)
   const [errorMessage, setError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [currentTranscript, setCurrentTranscript] = useState("")
 
-  const [processingStatus, setProcessingStatus] = useState<
-    Record<string, ProcessingStatus>
-  >({})
   const wsRefs = useRef<Record<string, WebSocket>>({})
 
   const fetchVideos = useCallback(async () => {
@@ -48,48 +46,12 @@ function App() {
     fetchVideos()
   }, [fetchVideos])
 
-  const listenToJob = useCallback(
-    (videoId: string, initialStatus: ProcessingStatus) => {
-      setProcessingStatus((ps) => ({ ...ps, [videoId]: initialStatus }))
-      const ws = new WebSocket(`ws://localhost:8000/ws/status/${videoId}`)
-      wsRefs.current[videoId] = ws
-
-      ws.onmessage = (evt) => {
-        const msg = JSON.parse(evt.data) as { step: ProcessingStatus;[k: string]: any }
-        setProcessingStatus((ps) => ({
-          ...ps,
-          [videoId]: msg.step,
-        }))
-
-        if (msg.step === "audio_chunked") {
-          ws.close()
-          setProcessingStatus((ps) => {
-            const next = { ...ps }
-            delete next[videoId]
-            return next
-          })
-          fetchVideos()
-        }
-      }
-
-      ws.onerror = () => {
-        ws.close()
-        setProcessingStatus((ps) => {
-          const next = { ...ps }
-          delete next[videoId]
-          return next
-        })
-      }
-    },
-    [fetchVideos]
-  )
 
   const handleUploadSuccess = useCallback(
-    (videoId: string) => {
-      listenToJob(videoId, "video_uploaded")
+    () => {
       fetchVideos()
     },
-    [listenToJob, fetchVideos]
+    [fetchVideos]
   )
 
   const handleDelete = useCallback(
