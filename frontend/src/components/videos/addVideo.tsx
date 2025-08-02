@@ -1,4 +1,4 @@
-import { useState, useRef, type FormEvent } from "react"
+import { useState, useRef, useEffect, type FormEvent } from "react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
@@ -10,11 +10,18 @@ interface AddVideoProps {
 
 export function AddVideo({ onUploadSuccess }: AddVideoProps) {
     const [file, setFile] = useState<File | null>(null)
-    const [status, setStatus] = useState<"idle" | "uploading" | "success" | "error">(
-        "idle"
-    )
+    const [status, setStatus] = useState<"idle" | "uploading" | "success" | "error">("idle")
     const [errorMsg, setErrorMsg] = useState<string>("")
     const inputRef = useRef<HTMLInputElement>(null)
+
+    useEffect(() => {
+        if (status === "success") {
+            const timer = setTimeout(() => {
+                setStatus("idle")
+            }, 5000)
+            return () => clearTimeout(timer)
+        }
+    }, [status])
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFile(e.target.files?.[0] ?? null)
@@ -44,11 +51,9 @@ export function AddVideo({ onUploadSuccess }: AddVideoProps) {
 
             if (res.status === 201) {
                 const videoId = (json as VideoItem)._id
-
                 setStatus("success")
                 setFile(null)
                 if (inputRef.current) inputRef.current.value = ""
-
                 onUploadSuccess(videoId)
             } else {
                 const detail =
