@@ -7,26 +7,25 @@ interface VideoTablePageProps {
     loading: boolean;
     error: string | null;
     data: VideoItem[];
-    processingStatus: boolean;
+    // processingStatus: boolean;
     onDelete: (rawId: string) => void;
     onViewTranscript: (rawId: string) => void;
+    onViewOpenAIAnalysis: (rawId: string) => void;
 }
 
 export default function VideoTablePage({
     loading,
     error,
     data,
-    processingStatus,
     onDelete,
     onViewTranscript,
+    onViewOpenAIAnalysis
 }: VideoTablePageProps) {
-    const statusRef = useRef(processingStatus);
-    useEffect(() => { statusRef.current = processingStatus }, [processingStatus]);
 
 
     const columns = useMemo(
-        () => getVideoColumns(onDelete, onViewTranscript),
-        [onDelete, onViewTranscript]
+        () => getVideoColumns(onDelete, onViewTranscript, onViewOpenAIAnalysis),
+        [onDelete, onViewTranscript, onViewOpenAIAnalysis]
     );
 
     if (loading) return <div className="text-center py-20">Loading…</div>;

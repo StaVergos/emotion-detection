@@ -1,4 +1,3 @@
-import React, { useState, useEffect } from "react"
 import type { ColumnDef } from "@tanstack/react-table"
 import { MoreHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -15,6 +14,7 @@ import type { VideoItem } from "../../types"
 export function getVideoColumns(
     onDelete: (rawId: string) => void,
     onViewTranscript: (rawId: string) => void,
+    onViewOpenAIAnalysis: (rawId: string) => void
 ): ColumnDef<VideoItem>[] {
     return [
         { accessorKey: "id", header: "ID" },
@@ -39,6 +39,9 @@ export function getVideoColumns(
 
                             <DropdownMenuItem onClick={() => onViewTranscript(v._id)} disabled={!canView}>
                                 View Transcript
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => onViewOpenAIAnalysis(v._id)} disabled={!canView}>
+                                View OpenAI Analysis
                             </DropdownMenuItem>
 
                             <DropdownMenuSeparator />
