@@ -1,5 +1,4 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 
 interface TranscriptDialogProps {
     open: boolean;
@@ -14,7 +13,6 @@ export function TranscriptDialog({ open, transcript, onClose }: TranscriptDialog
                 <DialogHeader>
                     <DialogTitle>Transcript</DialogTitle>
                     <DialogClose asChild>
-                        <Button variant="ghost" className="absolute right-4 top-4">✕</Button>
                     </DialogClose>
                 </DialogHeader>
                 <div className="mt-4 whitespace-pre-wrap text-sm">{transcript}</div>
