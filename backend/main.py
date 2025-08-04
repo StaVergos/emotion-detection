@@ -23,7 +23,6 @@ from src.mongodb import (
     emotion_detection_collection,
     openai_analysis_collection,
     check_record_exists,
-    check_video_has_openai_analysis,
 )
 from src.api.schemas import (
     EmotionModel,
@@ -168,48 +167,33 @@ def delete_video(video_id: str):
     return {"message": "Video deleted successfully."}
 
 
-@app.get("/videos/{video_id}/openai/analysis", status_code=200)
-def get_openai_analysis(video_id: str):
-    """Get OpenAI analysis for the video."""
-    if not check_video_has_openai_analysis(video_id):
-        raise HTTPException(404, "OpenAI analysis not found for this video.")
-
-    item = openai_analysis_collection.find_one({"video_id": video_id})
-    if not item:
-        raise HTTPException(404, "OpenAI analysis not found for this video.")
-
-    return {
-        "video_id": item["video_id"],
-        "prompt": item["prompt"],
-        "analysis": item["analysis"],
-    }
-
-
 @app.get("/videos/{video_id}/openai")
 def get_analysis_from_openai(video_id: str):
     """Get OpenAI analysis for the video."""
-    if check_video_has_openai_analysis(video_id):
-        raise HTTPException(404, "OpenAI analysis found for this video.")
-    item = emotion_detection_collection.find_one({"_id": video_id})
-    if not item:
-        raise HTTPException(404, "Video not found.")
+    analysis_item = openai_analysis_collection.find_one({"video_id": video_id})
+    if analysis_item:
+        return OpenAIAnalysisItem.model_validate(analysis_item)
+    else:
+        item = emotion_detection_collection.find_one({"_id": video_id})
+        if not item:
+            raise HTTPException(404, "Video not found.")
 
-    edi = EmotionDetectionItem.model_validate(item)
-    segments = edi.emotion_chunks
-    if not segments:
-        raise HTTPException(400, "No emotion segments found for this video.")
+        edi = EmotionDetectionItem.model_validate(item)
+        segments = edi.emotion_chunks
+        if not segments:
+            raise HTTPException(400, "No emotion segments found for this video.")
 
-    base_prompt = build_condition_messages(segments)
-    response_content = make_request_to_openai(base_prompt)
+        base_prompt = build_condition_messages(segments)
+        response_content = make_request_to_openai(base_prompt)
 
-    oai = OpenAIAnalysisItem(
-        video_id=video_id,
-        prompt=base_prompt,
-        analysis=response_content,
-    )
-    openai_analysis_collection.insert_one(oai.as_document())
+        oai = OpenAIAnalysisItem(
+            video_id=video_id,
+            prompt=base_prompt,
+            analysis=response_content,
+        )
+        openai_analysis_collection.insert_one(oai.as_document())
 
-    return oai
+        return oai
 
 
 @app.get("/videos/{video_id}/{model_name}")
