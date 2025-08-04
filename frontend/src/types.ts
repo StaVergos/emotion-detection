@@ -42,3 +42,14 @@ export type VideoColumn = {
     processing_status: "uploading" | "uploaded" | "processing" | "completed"
     created_at: string
 }
+
+export type PromptItem = {
+    role: "user" | "system"
+    content: string
+}
+
+export type OpenAIAnalysis = {
+    video_id: string
+    prompt: PromptItem[]
+    analysis: string
+}
