@@ -1,32 +1,45 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import { AddVideo } from "./components/videos/addVideo"
 import VideoTablePage from "./components/videos/page"
-import type { VideoItem, ProcessingStatus } from "./types"
+import type { VideoItem, OpenAIAnalysis } from "./types"
 import { TranscriptDialog } from "./components/videos/transcriptDialog"
+import { OpenAIDialog } from "./components/videos/openAIDialog"
 
 function App() {
   const [videos, setVideos] = useState<VideoItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [processingStatus, setProcessingStatus] = useState(false)
-  const [errorMessage, setError] = useState<string | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [currentTranscript, setCurrentTranscript] = useState("")
 
-  const wsRefs = useRef<Record<string, WebSocket>>({})
+  const [openAIAnalysis, setOpenAIAnalysis] = useState<OpenAIAnalysis[]>([])
+  const [openAILoading, setOpenAILoading] = useState(false)
+  const [openAIError, setOpenAIError] = useState<string | null>(null)
+
+  const [errorMessage, setError] = useState<string | null>(null)
+  const [dialogTranscriptOpen, setDialogTranscriptOpen] = useState(false)
+  const [dialogOpenAIAnalysisOpen, setDialogOpenAIAnalysisOpen] = useState(false)
+  const [currentTranscript, setCurrentTranscript] = useState("")
+  const currentOpenAIAnalysis = useRef<OpenAIAnalysis | null>(null)
 
   const fetchVideos = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const res = await fetch("http://localhost:8000/videos")
-      if (res.status === 404) { setVideos([]); return }
+      if (res.status === 404) {
+        setVideos([])
+        return
+      }
       const json = await res.json()
       if (!res.ok) throw new Error((json.detail as string) || `Error ${res.status}`)
+
       const normalized = json.videos.map((r: any) => ({
         _id: r._id,
         id: r._id.slice(-5),
         audio_object: r.audio_object_path,
-        created_at: new Date(r.created_at).toISOString().split("T").join(" ").split(".")[0],
+        created_at: new Date(r.created_at)
+          .toISOString()
+          .split("T")
+          .join(" ")
+          .split(".")[0],
         emotion_prompt_result: r.emotion_prompt_result,
         emotions: r.emotion_chunks,
         transcript: r.transcription_result,
@@ -46,13 +59,55 @@ function App() {
     fetchVideos()
   }, [fetchVideos])
 
+  useEffect(() => {
+    if (videos.length === 0) {
+      setOpenAIAnalysis([])
+      setOpenAILoading(false)
+      setOpenAIError(null)
+      return
+    }
 
-  const handleUploadSuccess = useCallback(
-    () => {
-      fetchVideos()
-    },
-    [fetchVideos]
-  )
+    const doAnalysis = async () => {
+      setOpenAILoading(true)
+      setOpenAIError(null)
+      setOpenAIAnalysis([])
+
+      try {
+        const results = await Promise.all(
+          videos.map(async (v) => {
+            const res = await fetch(
+              `http://localhost:8000/videos/${v._id}/openai`,
+              {
+                method: "GET",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+              }
+            )
+            if (!res.ok) throw new Error(`Error ${res.status}`)
+            const json = await res.json()
+            return {
+              video_id: v._id,
+              prompt: json.prompt,
+              analysis: json.analysis,
+            } as OpenAIAnalysis
+          })
+        )
+        setOpenAIAnalysis(results)
+      } catch (err: any) {
+        console.error("OpenAI analysis error:", err)
+        setOpenAIError(err.message)
+      } finally {
+        setOpenAILoading(false)
+      }
+    }
+
+    doAnalysis()
+  }, [videos])
+
+  const handleUploadSuccess = useCallback(() => {
+    fetchVideos()
+  }, [fetchVideos])
 
   const handleDelete = useCallback(
     async (rawId: string) => {
@@ -73,19 +128,23 @@ function App() {
     [fetchVideos]
   )
 
-  const handleViewTranscript = useCallback((videoId: string) => {
-    const vid = videos.find(v => v._id === videoId)
-    if (vid && vid.transcript) {
-      setCurrentTranscript(vid.transcript)
-      setDialogOpen(true)
+  const handleViewTranscript = useCallback(
+    (videoId: string) => {
+      const vid = videos.find((v) => v._id === videoId)
+      if (vid && vid.transcript) {
+        setCurrentTranscript(vid.transcript)
+        setDialogTranscriptOpen(true)
+      }
+    },
+    [videos]
+  )
+  const handleViewOpenAIAnalysis = useCallback((videoID: string) => {
+    const analysis: OpenAIAnalysis | undefined = openAIAnalysis.find((a) => a.video_id === videoID)
+    if (analysis) {
+      currentOpenAIAnalysis.current = analysis
+      setDialogOpenAIAnalysisOpen(true)
     }
-  }, [videos])
-
-  useEffect(() => {
-    return () => {
-      Object.values(wsRefs.current).forEach((ws) => ws.close())
-    }
-  }, [])
+  }, [openAIAnalysis])
 
   return (
     <div className="flex items-center justify-center h-full">
@@ -98,14 +157,22 @@ function App() {
           loading={loading}
           error={errorMessage}
           data={videos}
-          processingStatus={processingStatus}
           onDelete={handleDelete}
           onViewTranscript={handleViewTranscript}
+          onViewOpenAIAnalysis={handleViewOpenAIAnalysis}
         />
+
         <TranscriptDialog
-          open={dialogOpen}
+          open={dialogTranscriptOpen}
           transcript={currentTranscript}
-          onClose={() => setDialogOpen(false)}
+          onClose={() => setDialogTranscriptOpen(false)}
+        />
+
+        <OpenAIDialog
+          open={dialogOpenAIAnalysisOpen}
+          prompt={currentOpenAIAnalysis.current?.prompt ?? []}
+          analysis={currentOpenAIAnalysis.current?.analysis ?? ""}
+          onClose={() => setDialogOpenAIAnalysisOpen(false)}
         />
       </div>
     </div>
