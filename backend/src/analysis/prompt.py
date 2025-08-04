@@ -15,7 +15,12 @@ def build_condition_messages(chunks: list[EmotionSegment]) -> list[dict[str, str
         vad = seg.vad_score
         va = f"A{vad.arousal:.2f}/V{vad.valence:.2f}/D{vad.dominance:.2f}"
         fe = seg.face_emotions
-        face_str = ", ".join(f"{k}:{getattr(fe, k):.2f}" for k in type(fe).model_fields)
+        if all(getattr(fe, attr) is None for attr in type(fe).model_fields):
+            face_str = "No face detected"
+        else:
+            face_str = ", ".join(
+                f"{k}:{getattr(fe, k):.2f}" for k in type(fe).model_fields
+            )
         text = seg.text.strip()
         lines.append(
             f"[{ts}] Text: {text}  Text‐emo: {te}  Audio(VAD): {va}  Face: {face_str}"
