@@ -84,7 +84,7 @@ def get_video(video_id: str):
     "/videos",
     status_code=status.HTTP_201_CREATED,
     responses={
-        201: {"model": UploadedVideoResponse},
+        201: {"model": EmotionDetectionItem},
         400: {"model": VideoError},
         409: {"model": VideoError},
     },
@@ -138,9 +138,9 @@ def upload_video(file: UploadFile):
     )
     emotion_detection_collection.insert_one(edi.model_dump())
 
-    job_id = trigger_video_processing(upload_id)
+    trigger_video_processing(upload_id)
 
-    return {**edi.model_dump(), "extract_job_id": job_id}
+    return edi
 
 
 @app.delete("/videos/{video_id}", status_code=204)

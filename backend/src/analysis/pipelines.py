@@ -269,10 +269,9 @@ def get_face_emotion_scores(video_id: str) -> list[dict]:
             pass
 
 
-def trigger_video_processing(video_id: str) -> str:
+def trigger_video_processing(video_id: str) -> None:
     extract_audio_task(video_id)
     analyze_audio_task(video_id)
     chunk_audio_task(video_id)
     calculate_audio_emotion_scores_task(video_id)
     get_face_emotion_scores(video_id)
-    return video_id
