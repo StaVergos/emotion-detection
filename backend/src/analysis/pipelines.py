@@ -2,6 +2,7 @@ import datetime
 import os
 import tempfile
 import time
+from pathlib import Path
 
 
 from src.api.config import get_logger
@@ -35,7 +36,12 @@ def extract_audio_task(video_id: str) -> None:
     edi = EmotionDetectionItem.model_validate(rec)
     data = minio.get_fileobj_in_memory(minio.bucket_name, edi.video_object_path).read()
 
-    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as vf:
+    video_suffix = ".mp4"
+    if edi.video_object_path:
+        suffix = Path(edi.video_object_path).suffix
+        if suffix:
+            video_suffix = suffix
+    with tempfile.NamedTemporaryFile(suffix=video_suffix, delete=False) as vf:
         vf.write(data)
         video_path = vf.name
 
@@ -238,7 +244,12 @@ def get_face_emotion_scores(video_id: str) -> list[dict]:
         raise RuntimeError(msg)
 
     data = video_obj.read()
-    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as vf:
+
+    video_suffix = ".mp4"
+    suffix = Path(edi.video_object_path).suffix if edi.video_object_path else ""
+    if suffix:
+        video_suffix = suffix
+    with tempfile.NamedTemporaryFile(suffix=video_suffix, delete=False) as vf:
         vf.write(data)
         tmp_path = vf.name
 
