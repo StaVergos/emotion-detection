@@ -11,6 +11,25 @@ from src.api.schemas import AudioChunk
 logger = get_logger()
 
 
+def convert_video_to_mp4(source_video_path: str, output_video_path: str) -> str:
+    """Converts an arbitrary supported video file to MP4."""
+    start_time = time.time()
+    clip = VideoFileClip(source_video_path)
+    clip.write_videofile(
+        output_video_path,
+        codec="libx264",
+        audio_codec="aac",
+        preset="medium",
+        logger=None,
+    )
+    clip.close()
+    end_time = time.time()
+    logger.info(
+        "Video transcoding to MP4 completed in %.2f seconds", end_time - start_time
+    )
+    return output_video_path
+
+
 def extract_audio_from_video(video_file_path: str, output_audio_path: str) -> str:
     """
     Extracts audio from a video file and saves it as a WAV file.
