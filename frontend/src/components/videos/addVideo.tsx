@@ -4,6 +4,14 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import type { VideoItem } from "@/types"
 
+const ACCEPTED_VIDEO_EXTENSIONS = [".mp4", ".mov", ".avi"] as const
+const ACCEPTED_VIDEO_MIME_TYPES = [
+    "video/mp4",
+    "video/quicktime",
+    "video/x-msvideo",
+] as const
+const ACCEPTED_VIDEO_LABEL = ACCEPTED_VIDEO_EXTENSIONS.map((ext) => ext.toUpperCase()).join(", ")
+
 interface AddVideoProps {
     onUploadSuccess: (videoId: string) => void
 }
@@ -32,7 +40,7 @@ export function AddVideo({ onUploadSuccess }: AddVideoProps) {
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault()
         if (!file) {
-            setErrorMsg("Please select an MP4 file first.")
+            setErrorMsg(`Please select a supported video file (${ACCEPTED_VIDEO_LABEL}).`)
             return
         }
 
@@ -74,11 +82,11 @@ export function AddVideo({ onUploadSuccess }: AddVideoProps) {
             className="grid w-full max-w-md gap-4 border rounded-md p-6 mx-auto"
         >
             <div className="grid items-center gap-2">
-                <Label htmlFor="videoFile">Upload MP4 Video</Label>
+                <Label htmlFor="videoFile">Upload Video {ACCEPTED_VIDEO_LABEL}</Label>
                 <Input
                     id="videoFile"
                     type="file"
-                    accept="video/mp4"
+                    accept={ACCEPTED_VIDEO_MIME_TYPES.join(", ")}
                     onChange={handleFileChange}
                     ref={inputRef}
                 />

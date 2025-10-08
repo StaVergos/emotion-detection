@@ -16,8 +16,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from redis import Redis
 
+from src.file_processing import convert_video_to_mp4
 from src.analysis.emo_llama import analyze_prompt_with_emo_llama
 from src.api.config import get_logger
+from src.api.constants import ALLOWED_VIDEO_EXTENSIONS
 from src.minio import MinioClient
 from src.mongodb import (
     emotion_detection_collection,
@@ -30,7 +32,6 @@ from src.api.schemas import (
     EmotionDetectionItem,
     VideosResponse,
     VideoError,
-    UploadedVideoResponse,
     OpenAIAnalysisItem,
 )
 from src.analysis.pipelines import trigger_video_processing
@@ -90,12 +91,14 @@ def get_video(video_id: str):
     },
 )
 def upload_video(file: UploadFile):
-    if not file.filename.lower().endswith(".mp4"):
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in ALLOWED_VIDEO_EXTENSIONS:
+        allowed_formats = ", ".join(sorted(ALLOWED_VIDEO_EXTENSIONS))
         raise APIError(
             [
                 Error(
                     code=status.HTTP_400_BAD_REQUEST,
-                    message="Invalid file format. Only .mp4 files are allowed.",
+                    message=f"Invalid file format. Only {allowed_formats} files are allowed.",
                     source="file",
                 )
             ],
@@ -116,16 +119,33 @@ def upload_video(file: UploadFile):
 
     upload_id = uuid4().hex
     orig_name = Path(file.filename).name
-    video_key = f"videos/{upload_id}/{orig_name}"
+    stored_name = orig_name if suffix == ".mp4" else f"{Path(orig_name).stem}.mp4"
+    video_key = f"videos/{upload_id}/{stored_name}"
 
-    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+    cleanup_paths = []
+    with tempfile.NamedTemporaryFile(suffix=suffix or ".mp4", delete=False) as tmp:
         shutil.copyfileobj(file.file, tmp)
         tmp_path = tmp.name
+        source_path = tmp_path
+    cleanup_paths.append(source_path)
+
+    upload_path = source_path
+    if suffix != ".mp4":
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as converted:
+            converted_path = converted.name
+        cleanup_paths.append(converted_path)
+        convert_video_to_mp4(source_path, converted_path)
+        upload_path = converted_path
 
     try:
-        with open(tmp_path, "rb") as stream:
+        with open(upload_path, "rb") as stream:
             minio.upload_fileobj(stream, minio.bucket_name, video_key)
     finally:
+        for path in cleanup_paths:
+            try:
+                os.remove(path)
+            except OSError:
+                logger.warning(f"Failed to delete temp file: {path}")
         os.remove(tmp_path)
 
     created_at = datetime.now(timezone.utc)
