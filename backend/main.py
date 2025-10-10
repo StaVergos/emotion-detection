@@ -141,12 +141,12 @@ def upload_video(file: UploadFile):
         with open(upload_path, "rb") as stream:
             minio.upload_fileobj(stream, minio.bucket_name, video_key)
     finally:
-        for path in cleanup_paths:
+        for path in set(filter(None, cleanup_paths)):
             try:
-                os.remove(path)
+                if os.path.exists(path):
+                    os.remove(path)
             except OSError:
                 logger.warning(f"Failed to delete temp file: {path}")
-        os.remove(tmp_path)
 
     created_at = datetime.now(timezone.utc)
     edi = EmotionDetectionItem(
@@ -170,8 +170,9 @@ def delete_video(video_id: str):
     if not edi:
         raise HTTPException(404, "Video not found.")
     emotion_chunks = edi.emotion_chunks
-    if emotion_chunks:
+    if not emotion_chunks:
         logger.warning(f"[{video_id}] No emotion chunks to delete.")
+    else:
         keys = [
             chunk.audio_chunk_file_path
             for chunk in emotion_chunks
