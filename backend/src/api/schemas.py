@@ -30,6 +30,20 @@ class EmotionModel(StrEnum):
     EMO_LLAMA = "emo_llama"
 
 
+class EmotionStability(StrEnum):
+    STABLE = "stable"
+    CHANGED = "changed"
+
+
+class FaceProbability(StrEnum):
+    ANGRY = "angry"
+    DISGUST = "disgust"
+    FEAR = "fear"
+    HAPPY = "happy"
+    NEUTRAL = "neutral"
+    SAD = "sad"
+
+
 class Error(BaseSchema):
     code: int = Field(..., description="HTTP status code for the error")
     message: str = Field(..., description="Error message describing the issue")
@@ -104,6 +118,22 @@ class FaceEmotions(BaseSchema):
     )
     sad: float | None = Field(
         default=None, description="Probability of sadness emotion"
+    )
+    initial_emotion: str | None = Field(
+        default=None,
+        description="Most likely facial emotion observed at the start of the segment",
+    )
+    final_emotion: str | None = Field(
+        default=None,
+        description="Most likely facial emotion observed at the end of the segment",
+    )
+    dominant_emotion: str | None = Field(
+        default=None,
+        description="Facial emotion observed most frequently within the segment",
+    )
+    emotion_stability: EmotionStability | None = Field(
+        default=None,
+        description="Whether the facial emotion stayed consistent across the segment",
     )
 
 
