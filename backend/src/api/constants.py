@@ -7,3 +7,4 @@ ALLOWED_VIDEO_EXTENSIONS = {
     ".mov",
     ".avi",
 }
+FACE_PROBABILITY_FIELDS = {"angry", "disgust", "fear", "happy", "neutral", "sad"}
