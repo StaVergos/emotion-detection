@@ -171,6 +171,19 @@ class EmotionSegment(BaseSchema):
     )
 
 
+class EvaluationMetrics(BaseSchema):
+    face_detection_success_rate: float | None = Field(
+        default=None,
+        description="Percentage of transcript segments where a face was successfully detected",
+        examples=[92.5],
+    )
+    average_processing_time_seconds: float | None = Field(
+        default=None,
+        description="Total processing latency in seconds from upload to face emotion analysis",
+        examples=[128.4],
+    )
+
+
 class AudioChunk(BaseSchema):
     filename: str = Field(..., description="Temporary file path of the audio chunk")
     start: float = Field(..., description="Start time of the audio chunk in seconds")
@@ -225,6 +238,10 @@ class EmotionDetectionItem(BaseSchema):
     video_face_recognition_emotion_at: datetime | None = Field(
         default=None,
         description="Timestamp when emotion detection on video faces was completed",
+    )
+    evaluation_metrics: EvaluationMetrics | None = Field(
+        default=None,
+        description="Aggregate evaluation metrics calculated for the processed video",
     )
 
     def as_document(self) -> dict:
