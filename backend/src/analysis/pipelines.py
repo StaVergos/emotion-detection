@@ -18,6 +18,8 @@ from src.api.schemas import (
     FaceEmotions,
 )
 from src.analysis.audio_emotion import get_emotion_scores_from_file
+from src.analysis.metrics import compute_evaluation_metrics
+
 
 logger = get_logger()
 minio = MinioClient()
@@ -255,8 +257,14 @@ def get_face_emotion_scores(video_id: str) -> list[dict]:
 
     try:
         face_emotion_scores = analyze_video_intervals(tmp_path, timestamps)
+        completion_time = datetime.datetime.now(datetime.timezone.utc)
+        edi.video_face_recognition_emotion_at = completion_time
         if not face_emotion_scores:
             logger.warning(f"[{video_id}]: No face emotions detected")
+            edi.evaluation_metrics = compute_evaluation_metrics(edi)
+            emotion_detection_collection.update_one(
+                {"_id": video_id}, {"$set": edi.as_document()}
+            )
             return []
         logger.info(
             f"[{video_id}]: face emotions detected ({len(face_emotion_scores)}). Emotions: {face_emotion_scores}."
@@ -266,9 +274,7 @@ def get_face_emotion_scores(video_id: str) -> list[dict]:
                 if chunk.timestamp == score["timestamp"]:
                     chunk.face_emotions = FaceEmotions(**score["emotions"])
                     break
-        edi.video_face_recognition_emotion_at = datetime.datetime.now(
-            datetime.timezone.utc
-        )
+        edi.evaluation_metrics = compute_evaluation_metrics(edi)
         emotion_detection_collection.update_one(
             {"_id": video_id}, {"$set": edi.as_document()}
         )

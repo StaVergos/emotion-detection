@@ -2,7 +2,9 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from datetime import datetime, timezone
+
+# from datetime import datetime,
+import datetime
 from uuid import uuid4
 
 from fastapi import (
@@ -148,7 +150,7 @@ def upload_video(file: UploadFile):
             except OSError:
                 logger.warning(f"Failed to delete temp file: {path}")
 
-    created_at = datetime.now(timezone.utc)
+    created_at = datetime.datetime.now(datetime.timezone.utc)
     edi = EmotionDetectionItem(
         _id=upload_id,
         video_filename=orig_name,
