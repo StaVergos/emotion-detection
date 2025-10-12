@@ -15,8 +15,15 @@ def compute_evaluation_metrics(edi: EmotionDetectionItem) -> EvaluationMetrics:
 
     face_success_rate = None
     if total_segments:
-        successful_faces = sum(1 for seg in segments if seg.face_emotions is not None)
-        face_success_rate = (successful_faces / total_segments) * 100
+        successful_faces = sum(
+            1
+            for seg in segments
+            if isinstance(seg.face_emotions, dict) and len(seg.face_emotions) > 0
+        )
+
+        face_success_rate = (
+            (successful_faces / total_segments) * 100 if total_segments else None
+        )
 
     avg_processing_time = None
     if (
