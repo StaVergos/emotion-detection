@@ -1,6 +1,6 @@
-import { useMemo, useRef, useEffect } from "react";
+import { useMemo } from "react";
 import { DataTable } from "./dataTable";
-import { getVideoColumns } from "./columns";
+import { getVideoColumns, formatPercent, formatSeconds } from "./columns";
 import type { VideoItem } from "../../types";
 
 interface VideoTablePageProps {
