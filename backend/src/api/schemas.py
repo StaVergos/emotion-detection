@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Annotated, Optional
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 
 PyObjectId = Annotated[str, BeforeValidator(str)]
 
@@ -290,6 +290,17 @@ class OpenAIAnalysisItem(BaseSchema):
         ..., description="Prompt sent to OpenAI for analysis"
     )
     analysis: str = Field(..., description="Analysis result returned by OpenAI")
+
+    @field_validator("analysis", mode="before")
+    @classmethod
+    def strip_json_tags(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("```json") and v.endswith("```"):
+                v = v.removeprefix("```json").removesuffix("```").strip()
+            elif v.startswith("```") and v.endswith("```"):
+                v = v.removeprefix("```").removesuffix("```").strip()
+        return v
 
     model_config = ConfigDict(
         json_schema_extra={
