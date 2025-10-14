@@ -12,6 +12,11 @@ export type Emotions = {
     timestamp: [number, number]
 }
 
+export type EvaluationMetrics = {
+    face_detection_success_rate?: number | null
+    average_processing_time_seconds?: number | null
+}
+
 export type ProcessingStatus =
     | "video_uploaded"
     | "audio_extracted"
@@ -33,6 +38,7 @@ export type VideoItem = {
     processing_status: ProcessingStatus
     video_filename: string
     video_object: string
+    evaluation_metrics: EvaluationMetrics | null
 }
 
 

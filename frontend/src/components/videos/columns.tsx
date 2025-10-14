@@ -11,6 +11,25 @@ import {
 } from "@/components/ui/dropdown-menu"
 import type { VideoItem } from "../../types"
 
+export const formatPercent = (value: number | null | undefined) => {
+    if (value === null || value === undefined || Number.isNaN(value)) {
+        return "—"
+    }
+    return `${value.toFixed(1)}%`
+}
+
+export const formatSeconds = (value: number | null | undefined) => {
+    if (value === null || value === undefined || Number.isNaN(value)) {
+        return "—"
+    }
+    if (value >= 60) {
+        const minutes = Math.floor(value / 60)
+        const seconds = value % 60
+        return `${minutes}m ${seconds.toFixed(0)}s`
+    }
+    return `${value.toFixed(1)}s`
+}
+
 export function getVideoColumns(
     onDelete: (rawId: string) => void,
     onViewTranscript: (rawId: string) => void,
@@ -20,6 +39,18 @@ export function getVideoColumns(
         { accessorKey: "id", header: "ID" },
         { accessorKey: "video_filename", header: "File" },
         { accessorKey: "created_at", header: "Created" },
+        {
+            id: "face_detection_success_rate",
+            header: "Face Detection",
+            cell: ({ row }) =>
+                formatPercent(row.original.evaluation_metrics?.face_detection_success_rate ?? null),
+        },
+        {
+            id: "average_processing_time_seconds",
+            header: "Avg Processing Time",
+            cell: ({ row }) =>
+                formatSeconds(row.original.evaluation_metrics?.average_processing_time_seconds ?? null),
+        },
         {
             id: "actions",
             header: "⋮",

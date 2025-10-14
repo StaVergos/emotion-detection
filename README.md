@@ -1,12 +1,12 @@
 # Emotion Detection Video Processor
 
-A FastAPI service that accepts MP4 video uploads, stores them in MinIO, extracts audio, performs ASR transcription and emotion detection per timestamp, and persists metadata/results in MongoDB.
+A FastAPI service that accepts MP4, MOV, and AVI video uploads, stores them in MinIO, extracts audio, performs ASR transcription and emotion detection per timestamp, and persists metadata/results in MongoDB. Non-MP4 uploads are automatically transcoded to MP4 for downstream processing.
 
 ---
 
 ## Features
 
-- **Upload**: Accepts MP4 video via `/process_video/`.
+- **Upload**: Accepts MP4, MOV and AVI video via `/process_video/`.
 - **Storage**: Saves raw video & extracted WAV audio to MinIO.
 - **Transcription**: Uses a Whisper-based ASR pipeline to generate text with timestamps.
 - **Emotion Analysis**: Runs a Hugging Face text-classification model to detect emotions for each transcript chunk.

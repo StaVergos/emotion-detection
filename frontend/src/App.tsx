@@ -46,6 +46,7 @@ function App() {
         processing_status: r.processing_status,
         video_filename: r.video_filename,
         video_object: r.video_object_path,
+        evaluation_metrics: r.evaluation_metrics ?? null,
       }))
       setVideos(normalized)
     } catch (err: any) {
@@ -147,20 +148,26 @@ function App() {
   }, [openAIAnalysis])
 
   return (
-    <div className="flex items-center justify-center h-full">
-      <div className="bg-white p-6 rounded-lg shadow-lg max-w-xl w-full text-center space-y-6">
-        <h1 className="text-2xl font-bold">Emotion Detection</h1>
+    <div className="rounded-lg h-full min-h-auto bg-slate-100">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8">
+        <div className="rounded-lg bg-white p-6 shadow-lg">
+          <h1 className="text-3xl font-bold text-slate-900 lg:text-4xl">Emotion Detection</h1>
+        </div>
 
-        <AddVideo onUploadSuccess={handleUploadSuccess} />
+        <div className="rounded-lg bg-white p-6 shadow-lg">
+          <AddVideo onUploadSuccess={handleUploadSuccess} />
+        </div>
 
-        <VideoTablePage
-          loading={loading}
-          error={errorMessage}
-          data={videos}
-          onDelete={handleDelete}
-          onViewTranscript={handleViewTranscript}
-          onViewOpenAIAnalysis={handleViewOpenAIAnalysis}
-        />
+        <div className="rounded-lg bg-white p-6 shadow-lg">
+          <VideoTablePage
+            loading={loading}
+            error={errorMessage}
+            data={videos}
+            onDelete={handleDelete}
+            onViewTranscript={handleViewTranscript}
+            onViewOpenAIAnalysis={handleViewOpenAIAnalysis}
+          />
+        </div>
 
         <TranscriptDialog
           open={dialogTranscriptOpen}

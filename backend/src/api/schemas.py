@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Annotated, Optional
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 
 PyObjectId = Annotated[str, BeforeValidator(str)]
 
@@ -28,6 +28,20 @@ class EmotionType(StrEnum):
 class EmotionModel(StrEnum):
     GPT2 = "gpt2"
     EMO_LLAMA = "emo_llama"
+
+
+class EmotionStability(StrEnum):
+    STABLE = "stable"
+    CHANGED = "changed"
+
+
+class FaceProbability(StrEnum):
+    ANGRY = "angry"
+    DISGUST = "disgust"
+    FEAR = "fear"
+    HAPPY = "happy"
+    NEUTRAL = "neutral"
+    SAD = "sad"
 
 
 class Error(BaseSchema):
@@ -105,6 +119,22 @@ class FaceEmotions(BaseSchema):
     sad: float | None = Field(
         default=None, description="Probability of sadness emotion"
     )
+    initial_emotion: str | None = Field(
+        default=None,
+        description="Most likely facial emotion observed at the start of the segment",
+    )
+    final_emotion: str | None = Field(
+        default=None,
+        description="Most likely facial emotion observed at the end of the segment",
+    )
+    dominant_emotion: str | None = Field(
+        default=None,
+        description="Facial emotion observed most frequently within the segment",
+    )
+    emotion_stability: EmotionStability | None = Field(
+        default=None,
+        description="Whether the facial emotion stayed consistent across the segment",
+    )
 
 
 class EmotionSegment(BaseSchema):
@@ -138,6 +168,19 @@ class EmotionSegment(BaseSchema):
                 "emotion_score": 0.94203,
             }
         },
+    )
+
+
+class EvaluationMetrics(BaseSchema):
+    face_detection_success_rate: float | None = Field(
+        default=None,
+        description="Percentage of transcript segments where a face was successfully detected",
+        examples=[92.5],
+    )
+    average_processing_time_seconds: float | None = Field(
+        default=None,
+        description="Total processing latency in seconds from upload to face emotion analysis",
+        examples=[128.4],
     )
 
 
@@ -196,6 +239,10 @@ class EmotionDetectionItem(BaseSchema):
         default=None,
         description="Timestamp when emotion detection on video faces was completed",
     )
+    evaluation_metrics: EvaluationMetrics | None = Field(
+        default=None,
+        description="Aggregate evaluation metrics calculated for the processed video",
+    )
 
     def as_document(self) -> dict:
         """Convert the model to a MongoDB document format."""
@@ -243,6 +290,17 @@ class OpenAIAnalysisItem(BaseSchema):
         ..., description="Prompt sent to OpenAI for analysis"
     )
     analysis: str = Field(..., description="Analysis result returned by OpenAI")
+
+    @field_validator("analysis", mode="before")
+    @classmethod
+    def strip_json_tags(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("```json") and v.endswith("```"):
+                v = v.removeprefix("```json").removesuffix("```").strip()
+            elif v.startswith("```") and v.endswith("```"):
+                v = v.removeprefix("```").removesuffix("```").strip()
+        return v
 
     model_config = ConfigDict(
         json_schema_extra={
